@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { sql } from "@codemirror/lang-sql";
+import { EditorView } from "@codemirror/view";
 import {
   SimliClient,
   LogLevel,
@@ -146,6 +153,33 @@ function pickRandomFaceId() {
   return faceProfiles[Math.floor(Math.random() * faceProfiles.length)];
 }
 
+function getCodingLanguageExtensions(language) {
+  const normalized = (language || "").toLowerCase();
+  const extensions = [EditorView.lineWrapping];
+
+  if (normalized.includes("javascript")) {
+    return [...extensions, javascript({ jsx: true })];
+  }
+
+  if (normalized.includes("python")) {
+    return [...extensions, python()];
+  }
+
+  if (normalized.includes("java")) {
+    return [...extensions, java()];
+  }
+
+  if (normalized.includes("c++") || normalized.includes("cpp")) {
+    return [...extensions, cpp()];
+  }
+
+  if (normalized.includes("sql")) {
+    return [...extensions, sql()];
+  }
+
+  return extensions;
+}
+
 export function SessionPage({ slug }) {
   const router = useRouter();
   const { state, patchAgent, createSessionRecord } = useAppState();
@@ -168,6 +202,7 @@ export function SessionPage({ slug }) {
   const [codeLanguage, setCodeLanguage] = useState(codingLanguages[0] || "JavaScript");
   const [codeDraft, setCodeDraft] = useState("");
   const [codeSyncState, setCodeSyncState] = useState("idle");
+  const codeExtensions = useMemo(() => getCodingLanguageExtensions(codeLanguage), [codeLanguage]);
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -190,7 +225,6 @@ export function SessionPage({ slug }) {
   const codeSyncTimerRef = useRef(null);
   const lastSentCodeRef = useRef("");
   const avatarProfileRef = useRef(null);
-  const codeEditorRef = useRef(null);
   const transcriptEntries = [
     ...transcript,
     ...(userBuffer.trim()
@@ -231,90 +265,6 @@ export function SessionPage({ slug }) {
     flushUserTranscript(finalText);
     setUserBuffer("");
     userBufferRef.current = "";
-  }
-
-  function handleCodeEditorKeyDown(event) {
-    if (!isCodingAgent || event.key !== "Tab") {
-      return;
-    }
-
-    event.preventDefault();
-
-    const textarea = codeEditorRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    const indent = "  ";
-    const value = codeDraft;
-    const selectionStart = textarea.selectionStart;
-    const selectionEnd = textarea.selectionEnd;
-    const hasSelection = selectionStart !== selectionEnd;
-    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
-
-    if (event.shiftKey) {
-      const selectedText = value.slice(lineStart, selectionEnd);
-      const lines = selectedText.split("\n");
-      let removedCount = 0;
-      const updatedLines = lines.map((line) => {
-        if (line.startsWith(indent)) {
-          removedCount += indent.length;
-          return line.slice(indent.length);
-        }
-        if (line.startsWith("\t")) {
-          removedCount += 1;
-          return line.slice(1);
-        }
-        return line;
-      });
-
-      const nextValue =
-        value.slice(0, lineStart) +
-        updatedLines.join("\n") +
-        value.slice(selectionEnd);
-
-      setCodeDraft(nextValue);
-
-      window.requestAnimationFrame(() => {
-        const nextStart = hasSelection
-          ? lineStart
-          : Math.max(lineStart, selectionStart - indent.length);
-        const nextEnd = Math.max(nextStart, selectionEnd - removedCount);
-        textarea.selectionStart = nextStart;
-        textarea.selectionEnd = nextEnd;
-      });
-      return;
-    }
-
-    if (hasSelection) {
-      const selectedText = value.slice(lineStart, selectionEnd);
-      const lines = selectedText.split("\n");
-      const nextBlock = lines.map((line) => `${indent}${line}`).join("\n");
-      const nextValue =
-        value.slice(0, lineStart) +
-        nextBlock +
-        value.slice(selectionEnd);
-
-      setCodeDraft(nextValue);
-
-      window.requestAnimationFrame(() => {
-        textarea.selectionStart = lineStart + indent.length;
-        textarea.selectionEnd = selectionEnd + indent.length * lines.length;
-      });
-      return;
-    }
-
-    const nextValue =
-      value.slice(0, selectionStart) +
-      indent +
-      value.slice(selectionEnd);
-    setCodeDraft(nextValue);
-
-    window.requestAnimationFrame(() => {
-      const nextPosition = selectionStart + indent.length;
-      textarea.selectionStart = nextPosition;
-      textarea.selectionEnd = nextPosition;
-    });
   }
 
   useEffect(() => {
@@ -1010,13 +960,20 @@ export function SessionPage({ slug }) {
                     ))}
                   </select>
                 </div>
-                <textarea
-                  ref={codeEditorRef}
+                <CodeMirror
                   className="code-editor"
-                  spellCheck={false}
                   value={codeDraft}
-                  onChange={(event) => setCodeDraft(event.target.value)}
-                  onKeyDown={handleCodeEditorKeyDown}
+                  height="360px"
+                  basicSetup={{
+                    lineNumbers: true,
+                    foldGutter: false,
+                    highlightActiveLine: true,
+                    highlightActiveLineGutter: true,
+                    tabSize: 2,
+                  }}
+                  extensions={codeExtensions}
+                  onChange={(value) => setCodeDraft(value)}
+                  theme={state.theme === "light" ? "light" : "dark"}
                   placeholder="Write interview code here while explaining your thought process aloud."
                 />
               </div>
