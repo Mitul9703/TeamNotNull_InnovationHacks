@@ -7,11 +7,39 @@ import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
 function domainLabel(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch (_error) {
-    return url;
-  }
+  try { return new URL(url).hostname.replace(/^www\./, ""); }
+  catch (_) { return url; }
+}
+
+function Spinner({ label }) {
+  return (
+    <div className="eval-loading-inner">
+      <div className="spinner" />
+      <p className="muted-copy" style={{ margin: 0 }}>{label}</p>
+    </div>
+  );
+}
+
+function CollapsibleList({ items, initialMax = 4, label }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? items : items.slice(0, initialMax);
+  const hasMore = items.length > initialMax;
+  if (!items.length) return null;
+  return (
+    <div className="subtle-card" style={{ marginTop: 14 }}>
+      <div className="section-title">{label}</div>
+      <div className="collapsible-list">
+        {visible.map((item, i) => (
+          <div className="collapsible-list-item" key={i}>{item}</div>
+        ))}
+      </div>
+      {hasMore && (
+        <button type="button" className="toggle-btn" onClick={() => setExpanded(e => !e)}>
+          {expanded ? "▲ Show less" : `▼ Show all ${items.length}`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function SessionDetailPage({ slug, sessionId }) {
@@ -23,7 +51,7 @@ export function SessionDetailPage({ slug, sessionId }) {
     return (
       <AppShell>
         <div className="empty-state">
-          Session not found. Return to <Link href={`/agents/${slug}`}>the agent page</Link>.
+          Session not found. <Link href={`/agents/${slug}`}>Back to {agent?.name || "agent"}.</Link>
         </div>
       </AppShell>
     );
@@ -31,30 +59,23 @@ export function SessionDetailPage({ slug, sessionId }) {
 
   const evaluation = session.evaluation;
   const resources = session.resources || { status: "idle", topics: [], briefs: [] };
-  const comparison = session.comparison || {
-    status: "idle",
-    baselineSessionId: "",
-    result: null,
-    error: "",
-  };
+  const comparison = session.comparison || { status: "idle", baselineSessionId: "", result: null, error: "" };
+
   const comparisonOptions = useMemo(
-    () =>
-      (state.sessions?.[slug] || []).filter(
-        (item) =>
-          item.id !== sessionId &&
-          item.evaluation?.status === "completed" &&
-          item.evaluation?.result,
-      ),
-    [slug, sessionId, state.sessions],
+    () => (state.sessions?.[slug] || []).filter(
+      (item) => item.id !== sessionId && item.evaluation?.status === "completed" && item.evaluation?.result
+    ),
+    [slug, sessionId, state.sessions]
   );
+
   const [selectedComparisonId, setSelectedComparisonId] = useState(
-    comparison.baselineSessionId || comparisonOptions[0]?.id || "",
+    comparison.baselineSessionId || comparisonOptions[0]?.id || ""
   );
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
 
   useEffect(() => {
     const preferredId =
-      comparison.baselineSessionId &&
-      comparisonOptions.some((item) => item.id === comparison.baselineSessionId)
+      comparison.baselineSessionId && comparisonOptions.some((item) => item.id === comparison.baselineSessionId)
         ? comparison.baselineSessionId
         : comparisonOptions[0]?.id || "";
     setSelectedComparisonId(preferredId);
@@ -62,408 +83,343 @@ export function SessionDetailPage({ slug, sessionId }) {
 
   return (
     <AppShell>
-      <div className="agent-layout">
-        <div className="detail-stack">
-          <div className="detail-block">
-            <div className="button-row" style={{ marginBottom: 18 }}>
-              <Link href={`/agents/${slug}`} className="btn btn-secondary">
-                Back to {agent.name}
-              </Link>
-              <div className="eyebrow">Saved session</div>
-            </div>
-            <h1 className="hero-title" style={{ fontSize: "clamp(2rem, 4vw, 3.4rem)", marginTop: 0 }}>
-              {session.sessionName || `${agent.name} session`}
-            </h1>
-            <p className="hero-copy">
-              Ended {new Date(session.endedAt).toLocaleString()} with a duration of {session.durationLabel}.
-            </p>
+      <div className="page-single" style={{ maxWidth: 820 }}>
+
+        {/* Header */}
+        <div>
+          <div className="nav-row">
+            <Link href={`/agents/${slug}`} className="btn btn-secondary">← Back</Link>
+            <div className="eyebrow">Saved session</div>
           </div>
-
-          {session.coding ? (
-            <div className="detail-block">
-              <div className="section-title">Coding workspace</div>
-              <p className="muted-copy" style={{ marginTop: 0 }}>
-                Final language selection: {session.coding.language || "Unspecified"}
-              </p>
-              <div className="subtle-card">
-                <div className="section-title">Final code</div>
-                <pre className="code-block">{session.coding.finalCode || "// No code was saved."}</pre>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="detail-block">
-            <div className="section-title">Transcript</div>
-            <div className="transcript-list" style={{ maxHeight: "none" }}>
-              {session.transcript.length ? (
-                session.transcript.map((entry) => (
-                  <div className="transcript-item" key={entry.id}>
-                    <div className="transcript-role">{entry.role}</div>
-                    <p className="transcript-text">{entry.text}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="empty-state">No transcript was saved for this session.</div>
-              )}
-            </div>
+          <h1 className="hero-title" style={{ fontSize: "clamp(1.8rem, 4vw, 3rem)", margin: "0 0 8px" }}>
+            {session.sessionName || `${agent.name} session`}
+          </h1>
+          <div className="session-meta">
+            <span className="session-meta-item">
+              📅 {new Date(session.endedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            </span>
+            <span className="session-meta-item">
+              🕐 {new Date(session.endedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="session-meta-item">
+              ⏱ {session.durationLabel}
+            </span>
           </div>
         </div>
 
-        <div className="sidebar-stack">
-          <div className="metric-card">
-            <div className="section-title">Session information</div>
-            <div className="sidebar-stack">
-              <div className="subtle-card">
-                <span className="metric-label">Session name</span>
-                <div className="metric-value">{session.sessionName || "Untitled session"}</div>
-              </div>
-              <div className="subtle-card">
-                <span className="metric-label">Agent</span>
-                <div className="metric-value">{agent.name}</div>
-              </div>
-              <div className="subtle-card">
-                <span className="metric-label">Uploaded file</span>
-                <div className="metric-value">
-                  {session.upload?.fileName || "No supporting file"}
-                </div>
-              </div>
+        {/* Session Info card */}
+        <div className="metric-card">
+          <div className="section-title">Session Info</div>
+          <div className="session-info-grid">
+            <div className="subtle-card">
+              <span className="metric-label">Agent</span>
+              <div style={{ fontWeight: 600 }}>{agent.name}</div>
             </div>
-            {session.upload?.contextPreview ? (
-              <div className="subtle-card" style={{ marginTop: 16 }}>
-                <div className="section-title">Prepared file context</div>
-                <p className="muted-copy" style={{ marginBottom: 0 }}>
-                  {session.upload.contextPreview}
-                </p>
-              </div>
-            ) : null}
-            {session.customContext ? (
-              <div className="subtle-card" style={{ marginTop: 16 }}>
-                <div className="section-title">Extra session context</div>
-                <p className="muted-copy" style={{ marginBottom: 0 }}>
-                  {session.customContext}
-                </p>
-              </div>
-            ) : null}
+            <div className="subtle-card">
+              <span className="metric-label">Supporting file</span>
+              <div style={{ fontWeight: 600 }}>{session.upload?.fileName || "No file"}</div>
+            </div>
           </div>
+          {session.customContext && (
+            <div className="subtle-card" style={{ marginTop: 12 }}>
+              <span className="metric-label">Extra context</span>
+              <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>{session.customContext}</p>
+            </div>
+          )}
+        </div>
 
+        {/* Coding workspace (coding agent only) */}
+        {session.coding && (
           <div className="metric-card">
-            <div className="section-title">Evaluation</div>
-            {evaluation.status === "processing" ? (
-              <div className="subtle-card">
-                <div className="status-chip status-warning">
-                  <span className="status-dot" />
-                  Evaluation processing...
-                </div>
-                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                  This evaluation job is analyzing the transcript and any uploaded
-                  file context. Refresh is not required; it will update automatically
-                  when ready.
-                </p>
-              </div>
-            ) : evaluation.status === "failed" ? (
-              <div className="subtle-card">
-                <div className="status-chip status-danger">
-                  <span className="status-dot" />
-                  Evaluation failed
-                </div>
-                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                  {evaluation.error || "The evaluation job could not be completed."}
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="dashboard-score">
-                  {evaluation.result.score}/100
-                </div>
-                <p className="muted-copy">{evaluation.result.summary}</p>
-                <div className="metrics-grid">
-                  {evaluation.result.metrics.map((metric) => (
-                    <div className="subtle-card" key={metric.label}>
-                      <span className="metric-label">{metric.label}</span>
-                      <div className="metric-value">{metric.value}%</div>
-                      <div className="progress" style={{ marginTop: 10 }}>
-                        <span style={{ width: `${metric.value}%` }} />
-                      </div>
-                      {metric.justification ? (
-                        <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                          {metric.justification}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-                <div className="subtle-card" style={{ marginTop: 16 }}>
-                  <div className="section-title">Strengths</div>
-                  <ul className="list">
-                    {evaluation.result.strengths.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="subtle-card" style={{ marginTop: 16 }}>
-                  <div className="section-title">Improvements</div>
-                  <ul className="list">
-                    {evaluation.result.improvements.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                {evaluation.result.recommendations?.length ? (
-                  <div className="subtle-card" style={{ marginTop: 16 }}>
-                    <div className="section-title">Recommended next reps</div>
-                    <ul className="list">
-                      {evaluation.result.recommendations.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </>
-            )}
+            <div className="section-title">Coding workspace</div>
+            <p className="muted-copy" style={{ marginTop: 0, marginBottom: 12, fontSize: "0.9rem" }}>
+              Language: {session.coding.language || "Unspecified"}
+            </p>
+            <div className="subtle-card">
+              <div className="section-title" style={{ fontSize: "0.9rem" }}>Final code</div>
+              <pre className="code-block">{session.coding.finalCode || "// No code was saved."}</pre>
+            </div>
           </div>
+        )}
 
-          <div className="metric-card">
-            <div className="section-title">Session comparison</div>
-            {evaluation.status !== "completed" ? (
-              <div className="subtle-card">
-                <p className="muted-copy" style={{ margin: 0 }}>
-                  Finish the evaluation first, then compare this session with another saved {agent.name.toLowerCase()} session.
-                </p>
-              </div>
-            ) : !comparisonOptions.length ? (
-              <div className="subtle-card">
-                <p className="muted-copy" style={{ margin: 0 }}>
-                  Save at least one more completed {agent.name.toLowerCase()} session to compare progress here.
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="subtle-card">
-                  <div className="button-row compare-controls">
-                    <select
-                      className="language-select compare-select"
-                      value={selectedComparisonId}
-                      onChange={(event) => setSelectedComparisonId(event.target.value)}
-                    >
-                      {comparisonOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {(option.sessionName || "Untitled session")} · {new Date(option.endedAt).toLocaleString()} · {option.durationLabel}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled={!selectedComparisonId || comparison.status === "processing"}
-                      onClick={() =>
-                        requestSessionComparison(slug, sessionId, selectedComparisonId)
-                      }
-                    >
-                      {comparison.status === "processing"
-                        ? "Comparing..."
-                        : "Compare with other session"}
-                    </button>
-                  </div>
+        {/* Evaluation card */}
+        <div className="metric-card">
+          <div className="section-title">Evaluation</div>
+
+          {evaluation.status === "processing" && (
+            <>
+              {/* Shimmer skeleton while loading */}
+              <div style={{ marginBottom: 4 }}>
+                <Spinner label="Analysing your session…" />
+                <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+                  <div className="skeleton-score" />
+                  <div className="skeleton-line" style={{ width: "80%" }} />
+                  <div className="skeleton-line" style={{ width: "60%" }} />
                 </div>
-
-                {comparison.status === "processing" ? (
-                  <div className="subtle-card" style={{ marginTop: 16 }}>
-                    <div className="status-chip status-warning">
-                      <span className="status-dot" />
-                      Comparison processing...
-                    </div>
-                    <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                      We are checking whether this session moved the rubric in a better direction.
-                    </p>
-                  </div>
-                ) : null}
-
-                {comparison.status === "failed" ? (
-                  <div className="subtle-card" style={{ marginTop: 16 }}>
-                    <div className="status-chip status-danger">
-                      <span className="status-dot" />
-                      Comparison failed
-                    </div>
-                    <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                      {comparison.error || "The comparison could not be completed."}
-                    </p>
-                  </div>
-                ) : null}
-
-                {comparison.status === "completed" && comparison.result ? (
-                  <div className="comparison-stack">
-                    <div className="subtle-card comparison-summary-card">
-                      <div className={`status-chip ${comparison.result.trend === "improved"
-                        ? "status-success"
-                        : comparison.result.trend === "declined"
-                          ? "status-danger"
-                          : "status-warning"}`}
-                      >
-                        <span className="status-dot" />
-                        {comparison.result.trend}
-                      </div>
-                      <p className="muted-copy" style={{ margin: "12px 0 0" }}>
-                        {comparison.result.summary}
-                      </p>
-                    </div>
-                    <div className="comparison-grid">
-                      {comparison.result.metrics.map((metric) => {
-                        const deltaPrefix = metric.delta > 0 ? "+" : "";
-                        const trendClass =
-                          metric.trend === "improved"
-                            ? "comparison-delta positive"
-                            : metric.trend === "declined"
-                              ? "comparison-delta negative"
-                              : "comparison-delta neutral";
-
-                        return (
-                          <div className="subtle-card comparison-metric-card" key={metric.label}>
-                            <div className="button-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                              <span className="metric-label">{metric.label}</span>
-                              <span className={trendClass}>{deltaPrefix}{metric.delta}</span>
-                            </div>
-                            <div className="comparison-scoreline">
-                              <span>Now {metric.currentValue}</span>
-                              <span>Earlier {metric.baselineValue}</span>
-                            </div>
-                            <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                              {metric.insight}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-
-          <div className="metric-card">
-            <div className="section-title">Improvement resources</div>
-            {resources.status === "idle" ? (
-              <div className="subtle-card">
-                <p className="muted-copy" style={{ margin: 0 }}>
-                  Evaluation found targeted improvement themes. Fetch resources only
-                  if you want videos, articles, and practice links for this session.
-                </p>
-                {resources.briefs?.length ? (
-                  <div className="button-row" style={{ marginTop: 14 }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => requestResourceFetch(slug, sessionId)}
-                    >
-                      Fetch resources
-                    </button>
-                  </div>
-                ) : null}
               </div>
-            ) : null}
-            {resources.status === "processing" ? (
-              <div className="subtle-card">
-                <div className="status-chip status-warning">
-                  <span className="status-dot" />
-                  Finding resources...
-                </div>
-                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                  TinyFish is gathering videos, articles, and websites for the most
-                  important improvement themes from this session.
-                </p>
+              <p className="muted-copy" style={{ marginTop: 14, fontSize: "0.88rem" }}>
+                The evaluation pipeline is scoring your transcript. It will update automatically — no refresh needed.
+              </p>
+            </>
+          )}
+
+          {evaluation.status === "failed" && (
+            <div className="subtle-card">
+              <div className="status-chip status-danger"><span className="status-dot" />Evaluation failed</div>
+              <p className="muted-copy" style={{ marginTop: 10, marginBottom: 0, fontSize: "0.9rem" }}>
+                {evaluation.error || "The evaluation could not be completed."}
+              </p>
+            </div>
+          )}
+
+          {evaluation.status === "completed" && evaluation.result && (
+            <>
+              <div className="dashboard-score" style={{ marginTop: 8 }}>
+                {evaluation.result.score}<span style={{ fontSize: "1.4rem", opacity: 0.5 }}>/100</span>
               </div>
-            ) : null}
-            {resources.status === "failed" ? (
-              <div className="subtle-card">
-                <div className="status-chip status-danger">
-                  <span className="status-dot" />
-                  Resource search failed
-                </div>
-                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                  {resources.error || "We finished the evaluation, but the web resource search did not complete."}
-                </p>
-                {resources.briefs?.length ? (
-                  <div className="button-row" style={{ marginTop: 14 }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => requestResourceFetch(slug, sessionId)}
-                    >
-                      Try again
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {resources.status === "completed" && resources.topics?.length ? (
-              <div className="resource-accordion">
-                {resources.topics.map((topic, index) => (
-                  <details
-                    className="resource-group"
-                    key={topic.id || topic.topic}
-                    open={index === 0}
-                  >
-                    <summary className="resource-summary">
-                      <div>
-                        <div className="resource-topic">{topic.topic}</div>
-                        <p className="muted-copy" style={{ margin: "6px 0 0" }}>
-                          {topic.whyThisMatters}
-                        </p>
-                      </div>
-                      <span className="pill">
-                        {topic.items?.length || 0} resources
-                      </span>
-                    </summary>
-                    <div className="resource-grid">
-                      {(topic.items || []).map((item) => (
-                        <a
-                          key={`${topic.id}-${item.url}`}
-                          href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="resource-card"
-                        >
-                          <div className="button-row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-                            <span className="resource-kind">{item.type || "resource"}</span>
-                            <span className="metric-label">{item.source || domainLabel(item.url)}</span>
-                          </div>
-                          <div className="resource-title">{item.title}</div>
-                          <p className="muted-copy" style={{ marginTop: 10, marginBottom: 12 }}>
-                            {item.reason}
-                          </p>
-                          <span className="link-button">
-                            Open {domainLabel(item.url)}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  </details>
+              <p className="muted-copy" style={{ marginTop: 0, marginBottom: 4 }}>
+                {evaluation.result.summary}
+              </p>
+
+              <div className="metrics-grid-2">
+                {evaluation.result.metrics.map((metric) => (
+                  <MetricCard key={metric.label} metric={metric} />
                 ))}
               </div>
-            ) : null}
-            {resources.status === "completed" && !resources.topics?.length ? (
-              <div className="subtle-card">
-                <p className="muted-copy" style={{ margin: 0 }}>
-                  No targeted resources were saved for this session.
-                </p>
-              </div>
-            ) : null}
-          </div>
 
-          <div className="metric-card">
-            <div className="section-title">Evaluation criteria</div>
-            <div className="sidebar-stack">
-              {(agent.evaluationCriteria || []).map((criterion) => (
-                <div className="subtle-card" key={criterion.label}>
-                  <span className="metric-label">{criterion.label}</span>
-                  <p className="muted-copy" style={{ marginBottom: 0 }}>
-                    {criterion.description}
+              <CollapsibleList items={evaluation.result.strengths} label="Strengths" initialMax={4} />
+              <CollapsibleList items={evaluation.result.improvements} label="Areas to improve" initialMax={4} />
+              {evaluation.result.recommendations?.length > 0 && (
+                <CollapsibleList items={evaluation.result.recommendations} label="Recommended next reps" initialMax={4} />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Improvement Resources card */}
+        <div className="metric-card">
+          <div className="section-title">Improvement Resources</div>
+
+          {resources.status === "idle" && (
+            <div className="subtle-card">
+              <p className="muted-copy" style={{ margin: "0 0 14px" }}>
+                Fetch targeted videos, articles, and practice links based on your eval themes.
+              </p>
+              {resources.briefs?.length ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => requestResourceFetch(slug, sessionId)}
+                >
+                  Fetch resources
+                </button>
+              ) : (
+                <p className="muted-copy" style={{ margin: 0, fontSize: "0.88rem", opacity: 0.7 }}>
+                  Complete the evaluation first to unlock resources.
+                </p>
+              )}
+            </div>
+          )}
+
+          {resources.status === "processing" && (
+            <div className="subtle-card">
+              <Spinner label="Finding resources…" />
+              <p className="muted-copy" style={{ textAlign: "center", marginTop: 8, fontSize: "0.88rem" }}>
+                TinyFish is gathering articles, videos, and practice links.
+              </p>
+            </div>
+          )}
+
+          {resources.status === "failed" && (
+            <div className="subtle-card">
+              <div className="status-chip status-danger"><span className="status-dot" />Resource search failed</div>
+              <p className="muted-copy" style={{ marginTop: 10, marginBottom: 12, fontSize: "0.9rem" }}>
+                {resources.error || "The resource search did not complete."}
+              </p>
+              {resources.briefs?.length ? (
+                <button type="button" className="btn btn-secondary" onClick={() => requestResourceFetch(slug, sessionId)}>
+                  Try again
+                </button>
+              ) : null}
+            </div>
+          )}
+
+          {resources.status === "completed" && resources.topics?.length > 0 && (
+            <div className="resource-accordion">
+              {resources.topics.map((topic, index) => (
+                <details className="resource-group" key={topic.id || topic.topic} open={index === 0}>
+                  <summary className="resource-summary">
+                    <div>
+                      <div className="resource-topic">{topic.topic}</div>
+                      <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>{topic.whyThisMatters}</p>
+                    </div>
+                    <span className="pill">{topic.items?.length || 0} resources</span>
+                  </summary>
+                  <div className="resource-grid">
+                    {(topic.items || []).map((item) => (
+                      <a key={`${topic.id}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="resource-card">
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                          <span className="resource-kind">{item.type || "resource"}</span>
+                          <span className="metric-label" style={{ marginBottom: 0 }}>{item.source || domainLabel(item.url)}</span>
+                        </div>
+                        <div className="resource-title">{item.title}</div>
+                        <p className="muted-copy" style={{ marginTop: 8, marginBottom: 10, fontSize: "0.88rem" }}>{item.reason}</p>
+                        <span className="link-button">Open {domainLabel(item.url)}</span>
+                      </a>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+
+          {resources.status === "completed" && !resources.topics?.length && (
+            <div className="subtle-card">
+              <p className="muted-copy" style={{ margin: 0 }}>No targeted resources were found for this session.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Session Comparison card */}
+        <div className="metric-card">
+          <div className="section-title">Session Comparison</div>
+
+          {evaluation.status !== "completed" ? (
+            <div className="subtle-card">
+              <p className="muted-copy" style={{ margin: 0, fontSize: "0.9rem" }}>
+                Complete the evaluation first, then compare with another session.
+              </p>
+            </div>
+          ) : !comparisonOptions.length ? (
+            <div className="subtle-card">
+              <p className="muted-copy" style={{ margin: 0, fontSize: "0.9rem" }}>
+                Save at least one more completed session to compare progress.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="subtle-card">
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <select
+                    className="language-select compare-select"
+                    value={selectedComparisonId}
+                    onChange={(e) => setSelectedComparisonId(e.target.value)}
+                    style={{ flex: "1 1 200px" }}
+                  >
+                    {comparisonOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.sessionName || "Untitled"} · {new Date(option.endedAt).toLocaleDateString()} · {option.durationLabel}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={!selectedComparisonId || comparison.status === "processing"}
+                    onClick={() => requestSessionComparison(slug, sessionId, selectedComparisonId)}
+                  >
+                    {comparison.status === "processing" ? "Comparing…" : "Compare"}
+                  </button>
+                </div>
+              </div>
+
+              {comparison.status === "processing" && (
+                <div className="subtle-card" style={{ marginTop: 14 }}>
+                  <Spinner label="Comparing sessions…" />
+                </div>
+              )}
+
+              {comparison.status === "failed" && (
+                <div className="subtle-card" style={{ marginTop: 14 }}>
+                  <div className="status-chip status-danger"><span className="status-dot" />Comparison failed</div>
+                  <p className="muted-copy" style={{ marginTop: 10, marginBottom: 0, fontSize: "0.9rem" }}>
+                    {comparison.error || "The comparison could not be completed."}
                   </p>
+                </div>
+              )}
+
+              {comparison.status === "completed" && comparison.result && (
+                <div className="comparison-stack">
+                  <div className="subtle-card comparison-summary-card">
+                    <div className={`status-chip ${comparison.result.trend === "improved" ? "status-success" : comparison.result.trend === "declined" ? "status-danger" : "status-warning"}`}>
+                      <span className="status-dot" />
+                      {comparison.result.trend}
+                    </div>
+                    <p className="muted-copy" style={{ margin: "10px 0 0", fontSize: "0.9rem" }}>{comparison.result.summary}</p>
+                  </div>
+                  <div className="comparison-grid">
+                    {comparison.result.metrics.map((metric) => {
+                      const deltaPrefix = metric.delta > 0 ? "+" : "";
+                      const trendClass = metric.trend === "improved" ? "comparison-delta positive" : metric.trend === "declined" ? "comparison-delta negative" : "comparison-delta neutral";
+                      return (
+                        <div className="subtle-card comparison-metric-card" key={metric.label}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <span className="metric-label" style={{ marginBottom: 0 }}>{metric.label}</span>
+                            <span className={trendClass}>{deltaPrefix}{metric.delta}</span>
+                          </div>
+                          <div className="comparison-scoreline">
+                            <span>Now {metric.currentValue}</span>
+                            <span>Earlier {metric.baselineValue}</span>
+                          </div>
+                          <p className="muted-copy" style={{ marginTop: 8, marginBottom: 0, fontSize: "0.88rem" }}>{metric.insight}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Transcript card */}
+        <div className="metric-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div className="section-title" style={{ margin: 0 }}>Transcript</div>
+            {session.transcript.length > 6 && (
+              <button type="button" className="toggle-btn" style={{ marginTop: 0 }} onClick={() => setTranscriptExpanded(e => !e)}>
+                {transcriptExpanded ? "▲ Collapse" : "▼ Expand all"}
+              </button>
+            )}
+          </div>
+          {session.transcript.length === 0 ? (
+            <div className="empty-state">No transcript was saved for this session.</div>
+          ) : (
+            <div className={transcriptExpanded ? "transcript-scroll transcript-scroll-expanded" : "transcript-scroll"}>
+              {session.transcript.map((entry) => (
+                <div className="transcript-item" key={entry.id}>
+                  <div className="transcript-role">{entry.role}</div>
+                  <p className="transcript-text">{entry.text}</p>
                 </div>
               ))}
             </div>
-          </div>
+          )}
         </div>
+
       </div>
     </AppShell>
+  );
+}
+
+function MetricCard({ metric }) {
+  const [showDetail, setShowDetail] = useState(false);
+  return (
+    <div className="subtle-card">
+      <span className="metric-label">{metric.label}</span>
+      <div className="metric-value" style={{ fontSize: "1.6rem" }}>{metric.value}<span style={{ fontSize: "1rem", opacity: 0.5 }}>%</span></div>
+      <div className="progress" style={{ marginTop: 8 }}>
+        <span style={{ width: `${metric.value}%` }} />
+      </div>
+      {metric.justification && (
+        <>
+          {showDetail && (
+            <p className="muted-copy" style={{ marginTop: 10, marginBottom: 0, fontSize: "0.85rem" }}>{metric.justification}</p>
+          )}
+          <button type="button" className="toggle-btn" style={{ marginTop: 8 }} onClick={() => setShowDetail(d => !d)}>
+            {showDetail ? "▲ Hide" : "▼ Detail"}
+          </button>
+        </>
+      )}
+    </div>
   );
 }
