@@ -1,0 +1,23 @@
+{
+  "name": "simli-test",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.46.0",
+    "buffer": "^6.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "pdf-parse": "^2.4.5",
+    "simli-client": "^3.0.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.1"
+  }
+}

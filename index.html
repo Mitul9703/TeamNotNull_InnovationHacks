@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simli Basic Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+
+      .row {
+        margin-bottom: 12px;
+      }
+
+      input {
+        width: 100%;
+        padding: 8px;
+        margin-top: 4px;
+      }
+
+      button {
+        padding: 10px 16px;
+        margin-right: 8px;
+        cursor: pointer;
+      }
+
+      video {
+        width: 100%;
+        max-width: 640px;
+        background: #111;
+        border-radius: 12px;
+        margin-top: 16px;
+      }
+
+      .status {
+        margin-top: 16px;
+        padding: 12px;
+        background: #f4f4f4;
+        border-radius: 8px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Simli Basic Test</h1>
+
+    <div class="row">
+      <label for="apiKey">Simli API Key</label>
+      <input id="apiKey" type="password" placeholder="Enter your Simli API key" />
+    </div>
+
+    <div class="row">
+      <label for="faceId">Face ID</label>
+      <input id="faceId" type="text" placeholder="Enter your Face ID" />
+    </div>
+
+    <div class="row">
+      <button id="startBtn">Start Avatar</button>
+      <button id="stopBtn" disabled>Stop Avatar</button>
+    </div>
+
+    <div class="row">
+      <label for="userMessage">Message to avatar</label>
+      <input
+        id="userMessage"
+        type="text"
+        placeholder="Type something for the avatar to respond to"
+      />
+      <div class="row">
+        <button id="startMicBtn">Start Mic</button>
+        <button id="stopMicBtn" disabled>Stop Mic</button>
+      </div>
+      <div class="row">
+        <label for="deckFile">Upload presentation</label>
+        <input id="deckFile" type="file" accept=".pdf,.ppt,.pptx" />
+      </div>
+      
+      <div class="row">
+        <button id="uploadDeckBtn">Upload Deck</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="sendMessageBtn">Send Message</button>
+    </div>
+
+    <video id="video" autoplay playsinline></video>
+    <audio id="audio" autoplay></audio>
+
+    <div class="status" id="status">Waiting...</div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
