@@ -4,24 +4,6 @@ import Link from "next/link";
 import { AGENTS } from "../lib/agents";
 import { AppShell } from "./shell";
 
-// Per-agent accent badge colours
-const AGENT_BADGE_CLASS = {
-  professor: "agent-badge-professor",
-  recruiter: "agent-badge-recruiter",
-  investor:  "agent-badge-investor",
-  coding:    "agent-badge-coding",
-  custom:    "agent-badge-custom",
-};
-
-// Per-agent card background class
-const AGENT_BG_CLASS = {
-  professor: "agent-bg-professor",
-  recruiter: "agent-bg-recruiter",
-  investor:  "agent-bg-investor",
-  coding:    "agent-bg-coding",
-  custom:    "agent-bg-custom",
-};
-
 // All focus chips use the accent orange palette
 const PILL_COLOR = "pill-accent";
 
@@ -37,20 +19,18 @@ export function AgentsPage() {
 
       <div className="agents-grid">
         {AGENTS.map((agent) => {
-          const isCustom  = agent.slug === "custom";
-          const isCoding  = agent.slug === "coding";
-          const bgClass   = AGENT_BG_CLASS[agent.slug] || "";
-          const badgeClass = AGENT_BADGE_CLASS[agent.slug] || "";
+          const isCustom = agent.slug === "custom";
+          const isCoding = agent.slug === "coding";
 
           return (
             <Link
               href={`/agents/${agent.slug}`}
-              className={`agent-card ${bgClass}${isCustom ? " agent-card-custom" : ""}`}
+              className={`agent-card${isCustom ? " agent-card-custom" : ""}`}
               key={agent.slug}
             >
               {/* Header row: role badge + duration pill */}
               <div className="agent-title-row">
-                <div className={`agent-badge ${badgeClass}`}>{agent.role}</div>
+                <div className="agent-badge">{agent.role}</div>
                 <span className="pill">{agent.duration}</span>
               </div>
 

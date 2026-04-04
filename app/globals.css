@@ -294,6 +294,23 @@ button {
   gap: 14px;
 }
 
+/* Duration pill on agent cards uses accent colour */
+.agent-title-row .pill {
+  background: rgba(217, 119, 87, 0.18);
+  color: var(--accent-strong);
+  border: 1px solid rgba(217, 119, 87, 0.30);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+[data-theme="light"] .agent-title-row .pill {
+  background: rgba(217, 119, 87, 0.12);
+  color: var(--accent);
+  border-color: rgba(217, 119, 87, 0.28);
+}
+
 .agent-title {
   margin: 0;
   font-size: 1.55rem;
@@ -1556,119 +1573,16 @@ button {
   border-color: rgba(20, 170, 110, 0.24);
 }
 
-/* ── Agent card background treatments ──────────────────────── */
-.agent-bg-professor {
-  background-image:
-    radial-gradient(ellipse at top right, rgba(230, 177, 90, 0.15), transparent 55%),
-    radial-gradient(ellipse at bottom left, rgba(217, 119, 87, 0.08), transparent 50%);
-}
-
-.agent-bg-recruiter {
-  background-image:
-    radial-gradient(ellipse at top right, rgba(87, 155, 217, 0.16), transparent 55%),
-    radial-gradient(ellipse at bottom left, rgba(87, 155, 217, 0.06), transparent 50%);
-}
-
-.agent-bg-investor {
-  background-image:
-    radial-gradient(ellipse at top right, rgba(118, 185, 139, 0.16), transparent 55%),
-    radial-gradient(ellipse at bottom left, rgba(118, 185, 139, 0.06), transparent 50%);
-}
-
-.agent-bg-coding {
-  background-image:
-    radial-gradient(ellipse at top right, rgba(164, 131, 255, 0.18), transparent 55%),
-    radial-gradient(ellipse at bottom left, rgba(164, 131, 255, 0.07), transparent 50%);
-}
-
-.agent-bg-custom {
-  background-image:
-    radial-gradient(ellipse at top right, rgba(217, 119, 87, 0.14), transparent 45%),
-    radial-gradient(ellipse at bottom right, rgba(164, 131, 255, 0.12), transparent 45%),
-    radial-gradient(ellipse at bottom left, rgba(87, 199, 199, 0.10), transparent 45%);
-}
-
 /* ── Custom agent card standout ────────────────────────────── */
 .agent-card-custom {
-  border-color: rgba(164, 131, 255, 0.35);
-  position: relative;
-  overflow: hidden;
-}
-
-.agent-card-custom::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  border: 1.5px solid transparent;
-  background: linear-gradient(135deg, rgba(217, 119, 87, 0.4), rgba(164, 131, 255, 0.4), rgba(87, 199, 199, 0.4)) border-box;
-  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: destination-out;
-  mask-composite: exclude;
-  pointer-events: none;
-  animation: border-shimmer 3s linear infinite;
-  background-size: 200% 200%;
-}
-
-@keyframes border-shimmer {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  border-color: rgba(217, 119, 87, 0.4);
 }
 
 .agent-card-custom:hover {
-  border-color: rgba(164, 131, 255, 0.55);
+  border-color: rgba(217, 119, 87, 0.7);
 }
 
-/* ── Per-agent badge colours ───────────────────────────────── */
-.agent-badge-professor {
-  background: rgba(230, 177, 90, 0.18);
-  color: #c89430;
-  border: 1px solid rgba(230, 177, 90, 0.28);
-}
-[data-theme="light"] .agent-badge-professor {
-  background: rgba(193, 143, 41, 0.14);
-  color: #7a5208;
-}
-
-.agent-badge-recruiter {
-  background: rgba(87, 155, 217, 0.18);
-  color: #4a8cc4;
-  border: 1px solid rgba(87, 155, 217, 0.28);
-}
-[data-theme="light"] .agent-badge-recruiter {
-  background: rgba(60, 120, 190, 0.14);
-  color: #1e5090;
-}
-
-.agent-badge-investor {
-  background: rgba(118, 185, 139, 0.18);
-  color: #3d9e60;
-  border: 1px solid rgba(118, 185, 139, 0.28);
-}
-[data-theme="light"] .agent-badge-investor {
-  background: rgba(58, 143, 97, 0.14);
-  color: #1a6038;
-}
-
-.agent-badge-coding {
-  background: rgba(164, 131, 255, 0.18);
-  color: #8b60f0;
-  border: 1px solid rgba(164, 131, 255, 0.28);
-}
-[data-theme="light"] .agent-badge-coding {
-  background: rgba(120, 80, 220, 0.14);
-  color: #5020b0;
-}
-
-.agent-badge-custom {
-  background: linear-gradient(90deg, rgba(217, 119, 87, 0.16), rgba(164, 131, 255, 0.16));
-  color: var(--accent-strong);
-  border: 1px solid rgba(164, 131, 255, 0.24);
-}
-[data-theme="light"] .agent-badge-custom {
-  color: var(--accent);
-}
+/* ── Per-agent badge colours — all use the neutral base style ── */
 
 /* ── Evaluation criteria label colours ─────────────────────── */
 .criteria-label {
