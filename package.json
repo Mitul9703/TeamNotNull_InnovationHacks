@@ -3,16 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development node server.js",
+    "dev": "cross-env NODE_ENV=development node server.js",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
-    "server": "NODE_ENV=production node server.js"
+    "start": "cross-env NODE_ENV=production node server.js",
+    "server": "cross-env NODE_ENV=production node server.js"
   },
   "dependencies": {
     "@google/genai": "^1.46.0",
     "assemblyai": "^4.28.0",
     "buffer": "^6.0.3",
     "cors": "^2.8.6",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "multer": "^2.1.1",
