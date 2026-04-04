@@ -92,8 +92,19 @@ export function SessionDetailPage({ slug, sessionId }) {
                   Evaluation processing...
                 </div>
                 <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
-                  This simulated evaluation is still running. Refresh is not required;
-                  it will update automatically when ready.
+                  This evaluation job is analyzing the transcript and any uploaded
+                  file context. Refresh is not required; it will update automatically
+                  when ready.
+                </p>
+              </div>
+            ) : evaluation.status === "failed" ? (
+              <div className="subtle-card">
+                <div className="status-chip status-danger">
+                  <span className="status-dot" />
+                  Evaluation failed
+                </div>
+                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                  {evaluation.error || "The evaluation job could not be completed."}
                 </p>
               </div>
             ) : (
@@ -110,6 +121,11 @@ export function SessionDetailPage({ slug, sessionId }) {
                       <div className="progress" style={{ marginTop: 10 }}>
                         <span style={{ width: `${metric.value}%` }} />
                       </div>
+                      {metric.justification ? (
+                        <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                          {metric.justification}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -129,6 +145,16 @@ export function SessionDetailPage({ slug, sessionId }) {
                     ))}
                   </ul>
                 </div>
+                {evaluation.result.recommendations?.length ? (
+                  <div className="subtle-card" style={{ marginTop: 16 }}>
+                    <div className="section-title">Recommended next reps</div>
+                    <ul className="list">
+                      {evaluation.result.recommendations.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </>
             )}
           </div>

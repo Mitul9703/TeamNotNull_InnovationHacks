@@ -9,15 +9,20 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  AGENTS,
-  DEFAULT_METRICS,
-  buildMockEvaluation,
-} from "../lib/agents";
+import { AGENTS } from "../lib/agents";
 
 const AppContext = createContext(null);
 const STORAGE_KEY = "pitchmirror-state-v1";
-const EVALUATION_DELAY_MS = 10000;
+
+function buildDefaultEvaluation(agent) {
+  return {
+    score: 0,
+    metrics: (agent.evaluationCriteria || []).map((criterion) => ({
+      label: criterion.label,
+      value: 0,
+    })),
+  };
+}
 
 function buildInitialAgentState() {
   return AGENTS.reduce((acc, agent) => {
@@ -28,6 +33,7 @@ function buildInitialAgentState() {
         previewUrl: "",
         previewOpen: false,
         contextPreview: "",
+        contextText: "",
         error: "",
       },
       session: {
@@ -36,10 +42,7 @@ function buildInitialAgentState() {
         lastEndedAt: "",
         lastDurationLabel: "00:00",
       },
-      evaluation: {
-        score: DEFAULT_METRICS.score,
-        metrics: DEFAULT_METRICS.metrics,
-      },
+      evaluation: buildDefaultEvaluation(agent),
       rating: 0,
     };
     return acc;
@@ -47,8 +50,9 @@ function buildInitialAgentState() {
 }
 
 function buildPersistedAgents(agents) {
+  const initial = buildInitialAgentState();
   return AGENTS.reduce((acc, agent) => {
-    const current = agents?.[agent.slug] || buildInitialAgentState()[agent.slug];
+    const current = agents?.[agent.slug] || initial[agent.slug];
     acc[agent.slug] = {
       session: {
         status: "idle",
@@ -136,7 +140,7 @@ export function AppProvider({ children }) {
   );
   const [mounted, setMounted] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const evaluationTimersRef = useRef(new Map());
+  const evaluationJobsRef = useRef(new Map());
 
   const dismissToast = useCallback((id) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -192,31 +196,89 @@ export function AppProvider({ children }) {
     }));
   }, []);
 
-  const scheduleEvaluation = useCallback(
-    (slug, sessionId, startedAt) => {
-      const timerKey = `${slug}:${sessionId}`;
-      if (evaluationTimersRef.current.has(timerKey)) {
-        window.clearTimeout(evaluationTimersRef.current.get(timerKey));
+  const runEvaluationJob = useCallback(
+    async (session) => {
+      const timerKey = `${session.agentSlug}:${session.id}`;
+      if (evaluationJobsRef.current.has(timerKey)) {
+        return;
       }
 
-      const elapsed = Date.now() - new Date(startedAt).getTime();
-      const remaining = Math.max(0, EVALUATION_DELAY_MS - elapsed);
+      const abortController = new AbortController();
+      evaluationJobsRef.current.set(timerKey, abortController);
 
-      const timeoutId = window.setTimeout(() => {
-        patchSession(slug, sessionId, (session) => ({
-          ...session,
+      patchSession(session.agentSlug, session.id, (currentSession) => ({
+        ...currentSession,
+        evaluation: {
+          ...currentSession.evaluation,
+          status: "processing",
+          startedAt:
+            currentSession.evaluation?.startedAt ||
+            currentSession.endedAt ||
+            new Date().toISOString(),
+          error: "",
+        },
+      }));
+
+      try {
+        const response = await fetch("/api/evaluate-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentSlug: session.agentSlug,
+            sessionId: session.id,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            durationLabel: session.durationLabel,
+            transcript: session.transcript || [],
+            upload: session.upload || null,
+          }),
+          signal: abortController.signal,
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to evaluate session.");
+        }
+
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
           evaluation: {
             status: "completed",
-            startedAt: session.evaluation.startedAt,
+            startedAt:
+              currentSession.evaluation?.startedAt ||
+              session.evaluation?.startedAt ||
+              new Date().toISOString(),
             completedAt: new Date().toISOString(),
-            result: buildMockEvaluation(slug),
+            result: payload.evaluation,
+            error: "",
           },
         }));
-        evaluationTimersRef.current.delete(timerKey);
-        pushToast(`${AGENTS.find((agent) => agent.slug === slug)?.name || "Session"} evaluation is ready.`);
-      }, remaining);
 
-      evaluationTimersRef.current.set(timerKey, timeoutId);
+        pushToast(`${session.agentName || "Session"} evaluation is ready.`);
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
+          evaluation: {
+            ...currentSession.evaluation,
+            status: "failed",
+            failedAt: new Date().toISOString(),
+            error: error.message || "Evaluation failed.",
+          },
+        }));
+
+        pushToast(
+          `${session.agentName || "Session"} evaluation could not be completed.`,
+        );
+      } finally {
+        evaluationJobsRef.current.delete(timerKey);
+      }
     },
     [patchSession, pushToast],
   );
@@ -242,42 +304,23 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!mounted) return;
 
-    for (const timerId of evaluationTimersRef.current.values()) {
-      window.clearTimeout(timerId);
-    }
-    evaluationTimersRef.current.clear();
-
     AGENTS.forEach((agent) => {
       (state.sessions[agent.slug] || []).forEach((session) => {
-        if (session.evaluation?.status !== "processing") return;
-
-        const startedAt = session.evaluation.startedAt || session.endedAt || new Date().toISOString();
-        const elapsed = Date.now() - new Date(startedAt).getTime();
-
-        if (elapsed >= EVALUATION_DELAY_MS) {
-          patchSession(agent.slug, session.id, (currentSession) => ({
-            ...currentSession,
-            evaluation: {
-              status: "completed",
-              startedAt,
-              completedAt: new Date().toISOString(),
-              result: buildMockEvaluation(agent.slug),
-            },
-          }));
-          return;
+        if (session.evaluation?.status === "processing") {
+          void runEvaluationJob(session);
         }
-
-        scheduleEvaluation(agent.slug, session.id, startedAt);
       });
     });
+  }, [mounted, runEvaluationJob, state.sessions]);
 
+  useEffect(() => {
     return () => {
-      for (const timerId of evaluationTimersRef.current.values()) {
-        window.clearTimeout(timerId);
+      for (const controller of evaluationJobsRef.current.values()) {
+        controller.abort();
       }
-      evaluationTimersRef.current.clear();
+      evaluationJobsRef.current.clear();
     };
-  }, [mounted, patchSession, scheduleEvaluation, state.sessions]);
+  }, []);
 
   const createSessionRecord = useCallback(
     (session) => {
@@ -287,6 +330,7 @@ export function AppProvider({ children }) {
         evaluation: {
           status: "processing",
           startedAt,
+          error: "",
         },
       };
 
@@ -298,10 +342,10 @@ export function AppProvider({ children }) {
         },
       }));
 
-      scheduleEvaluation(session.agentSlug, session.id, startedAt);
+      void runEvaluationJob(sessionRecord);
       return sessionRecord;
     },
-    [scheduleEvaluation],
+    [runEvaluationJob],
   );
 
   const value = useMemo(

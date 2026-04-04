@@ -126,6 +126,7 @@ export function AgentDetailPage({ slug }) {
           previewUrl,
           previewOpen: false,
           contextPreview: data.contextPreview || "",
+          contextText: data.contextText || "",
           error: "",
         },
       }));
@@ -312,6 +313,11 @@ export function AgentDetailPage({ slug }) {
                         <div className="status-chip status-warning">
                           <span className="status-dot" />
                           Evaluation processing...
+                        </div>
+                      ) : session.evaluation?.status === "failed" ? (
+                        <div className="status-chip status-danger">
+                          <span className="status-dot" />
+                          Evaluation failed
                         </div>
                       ) : (
                         <div className="status-chip status-success">

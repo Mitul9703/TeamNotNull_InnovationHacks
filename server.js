@@ -6,7 +6,7 @@ import multer from "multer";
 import next from "next";
 import { createRequire } from "node:module";
 import { WebSocketServer } from "ws";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { AssemblyAI } from "assemblyai";
 import { AGENT_LOOKUP } from "./lib/agents.js";
 
@@ -25,6 +25,107 @@ const upload = multer({ dest: "uploads/" });
 
 let uploadedContextText = "";
 let uploadedFileName = "";
+
+const evaluationResponseSchema = {
+  type: Type.OBJECT,
+  required: ["score", "summary", "metrics", "strengths", "improvements", "recommendations"],
+  properties: {
+    score: {
+      type: Type.INTEGER,
+      description: "Overall evaluation score from 0 to 100.",
+    },
+    summary: {
+      type: Type.STRING,
+      description: "A concise overall summary of the session.",
+    },
+    metrics: {
+      type: Type.ARRAY,
+      description: "Rubric metrics for this agent.",
+      items: {
+        type: Type.OBJECT,
+        required: ["label", "score", "justification"],
+        properties: {
+          label: {
+            type: Type.STRING,
+          },
+          score: {
+            type: Type.INTEGER,
+          },
+          justification: {
+            type: Type.STRING,
+          },
+        },
+      },
+    },
+    strengths: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.STRING,
+      },
+    },
+    improvements: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.STRING,
+      },
+    },
+    recommendations: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.STRING,
+      },
+    },
+  },
+};
+
+function normalizeTranscriptRole(role) {
+  if (!role) return "User";
+  if (role === "You") return "User";
+  return role;
+}
+
+function buildTranscriptText(transcript) {
+  return (transcript || [])
+    .map((entry) => {
+      const role = normalizeTranscriptRole(entry.role);
+      const text = (entry.text || "").trim();
+      if (!text) return null;
+      return `${role}: ${text}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizeEvaluationResult(agent, rawResult) {
+  const criteria = agent.evaluationCriteria || [];
+  const metricsByLabel = new Map(
+    (rawResult.metrics || []).map((metric) => [metric.label, metric]),
+  );
+
+  const metrics = criteria.map((criterion) => {
+    const metric = metricsByLabel.get(criterion.label);
+    return {
+      label: criterion.label,
+      value: Math.max(0, Math.min(100, Number(metric?.score || 0))),
+      justification: (metric?.justification || "").trim(),
+    };
+  });
+
+  return {
+    score: Math.max(0, Math.min(100, Number(rawResult.score || 0))),
+    summary: (rawResult.summary || "").trim(),
+    metrics,
+    strengths: Array.isArray(rawResult.strengths)
+      ? rawResult.strengths.filter(Boolean).slice(0, 4)
+      : [],
+    improvements: Array.isArray(rawResult.improvements)
+      ? rawResult.improvements.filter(Boolean).slice(0, 4)
+      : [],
+    recommendations: Array.isArray(rawResult.recommendations)
+      ? rawResult.recommendations.filter(Boolean).slice(0, 4)
+      : [],
+  };
+}
 
 function registerLiveBridge(server) {
   const wss = new WebSocketServer({ noServer: true });
@@ -369,11 +470,100 @@ ${rawText}`,
         ok: true,
         fileName: uploadedFileName,
         contextPreview: uploadedContextText.slice(0, 1000),
+        contextText: uploadedContextText,
       });
     } catch (error) {
       console.error("Deck upload error:", error);
       return res.status(500).json({
         error: "Failed to upload and process PDF.",
+        details: error.message,
+      });
+    }
+  });
+
+  app.post("/api/evaluate-session", async (req, res) => {
+    try {
+      const {
+        agentSlug,
+        transcript,
+        upload,
+        durationLabel,
+        startedAt,
+        endedAt,
+      } = req.body || {};
+
+      const agent = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
+      const transcriptText = buildTranscriptText(transcript);
+
+      if (!transcriptText) {
+        return res.status(400).json({
+          error: "A completed transcript is required for evaluation.",
+        });
+      }
+
+      const criteriaBlock = (agent.evaluationCriteria || [])
+        .map(
+          (criterion, index) =>
+            `${index + 1}. ${criterion.label}: ${criterion.description}`,
+        )
+        .join("\n");
+
+      const uploadContext = upload?.contextText?.trim()
+        ? upload.contextText.trim()
+        : "No uploaded file context was provided for this session.";
+
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+      });
+
+      const evaluationPrompt = `
+Agent: ${agent.name}
+Scenario: ${agent.scenario}
+Session duration: ${durationLabel || "Unknown"}
+Started at: ${startedAt || "Unknown"}
+Ended at: ${endedAt || "Unknown"}
+
+Rubric dimensions:
+${criteriaBlock}
+
+Instructions:
+- Return scores only for the rubric dimensions listed above.
+- Use a 0 to 100 integer score for every metric and for the overall score.
+- Be specific and fair.
+- Ground every metric justification in actual transcript evidence.
+- Treat uploaded document context as supporting background only when it is relevant.
+- Do not invent transcript details, file details, or performance claims.
+- Strengths, improvements, and recommendations should be concise, concrete, and non-redundant.
+- Keep the feedback human and useful, not robotic.
+
+Uploaded file context:
+${uploadContext}
+
+Complete labeled transcript:
+${transcriptText}
+      `.trim();
+
+      const evaluationResponse = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: evaluationPrompt,
+        config: {
+          systemInstruction: agent.evaluationPrompt,
+          responseMimeType: "application/json",
+          responseSchema: evaluationResponseSchema,
+        },
+      });
+
+      const parsed = JSON.parse((evaluationResponse.text || "").trim());
+      const evaluation = normalizeEvaluationResult(agent, parsed);
+
+      return res.json({
+        ok: true,
+        evaluation,
+      });
+    } catch (error) {
+      console.error("Session evaluation error:", error);
+      return res.status(500).json({
+        error: "Failed to evaluate session.",
         details: error.message,
       });
     }

@@ -623,6 +623,7 @@ export function SessionPage({ slug }) {
         ? {
             fileName: upload.fileName,
             contextPreview: upload.contextPreview,
+            contextText: upload.contextText,
           }
         : null,
     });
@@ -634,6 +635,7 @@ export function SessionPage({ slug }) {
         previewUrl: "",
         previewOpen: false,
         contextPreview: "",
+        contextText: "",
         error: "",
       },
       session: {
