@@ -809,6 +809,69 @@ button {
   font-weight: 600;
 }
 
+.compare-controls {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compare-select {
+  flex: 1 1 240px;
+}
+
+.comparison-stack {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.comparison-summary-card {
+  display: grid;
+  gap: 4px;
+}
+
+.comparison-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.comparison-metric-card {
+  display: grid;
+  gap: 10px;
+}
+
+.comparison-scoreline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.comparison-delta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  background: var(--bg-panel);
+}
+
+.comparison-delta.positive {
+  color: var(--success);
+}
+
+.comparison-delta.negative {
+  color: var(--danger);
+}
+
+.comparison-delta.neutral {
+  color: var(--warning);
+}
+
 .coding-sidebar {
   display: grid;
   gap: 18px;
@@ -915,6 +978,19 @@ button {
 
   .resource-grid {
     grid-template-columns: 1fr;
+  }
+
+  .compare-controls {
+    align-items: stretch;
+  }
+
+  .compare-controls .btn {
+    width: 100%;
+  }
+
+  .comparison-scoreline {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .coding-sidebar {

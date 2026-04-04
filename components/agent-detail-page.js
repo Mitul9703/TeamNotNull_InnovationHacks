@@ -56,8 +56,12 @@ export function AgentDetailPage({ slug }) {
   const pastSessions = state.sessions?.[slug] || [];
 
   const canStart = useMemo(() => {
-    return upload.status !== "uploading" && agentState.session.status !== "starting";
-  }, [agentState.session.status, upload.status]);
+    return (
+      upload.status !== "uploading" &&
+      agentState.session.status !== "starting" &&
+      Boolean(agentState.sessionName?.trim())
+    );
+  }, [agentState.session.status, agentState.sessionName, upload.status]);
 
   if (!agent || !agentState) {
     return (
@@ -153,7 +157,12 @@ export function AgentDetailPage({ slug }) {
   }
 
   function startSession() {
+    if (!agentState.sessionName?.trim()) {
+      setLocalError("Session name is required before you start.");
+      return;
+    }
     if (!canStart) return;
+    setLocalError("");
     patchAgent(slug, (current) => ({
       ...current,
       session: {
@@ -201,6 +210,32 @@ export function AgentDetailPage({ slug }) {
                 ))}
               </ul>
             </div>
+          </div>
+
+          <div className="upload-card">
+            <div className="section-title">Session name</div>
+            <p className="muted-copy">
+              Give this rehearsal a short name so it is easy to find later in saved sessions.
+            </p>
+            <label className="label" htmlFor="session-name">
+              Required session name
+            </label>
+            <input
+              id="session-name"
+              className="context-textarea"
+              type="text"
+              value={agentState.sessionName || ""}
+              onChange={(event) => {
+                setLocalError("");
+                patchAgent(slug, (current) => ({
+                  ...current,
+                  sessionName: event.target.value,
+                }));
+              }}
+              placeholder={`Example: ${agent.name} practice`}
+              disabled={agentState.session.status === "active" || agentState.session.status === "starting"}
+              style={{ minHeight: 52, resize: "none" }}
+            />
           </div>
 
           <div className="upload-card">
@@ -310,6 +345,16 @@ export function AgentDetailPage({ slug }) {
                 {upload.status === "uploading" ? "Preparing upload..." : "Start session"}
               </button>
             </div>
+            {!agentState.sessionName?.trim() ? (
+              <p className="muted-copy" style={{ color: "var(--danger)", marginBottom: 0 }}>
+                Add a session name before starting.
+              </p>
+            ) : null}
+            {localError ? (
+              <p className="muted-copy" style={{ color: "var(--danger)", marginBottom: 0 }}>
+                {localError}
+              </p>
+            ) : null}
           </div>
 
           <div className="metric-card">
@@ -336,10 +381,13 @@ export function AgentDetailPage({ slug }) {
                     key={session.id}
                   >
                     <div className="session-list-top">
-                      <strong>{new Date(session.endedAt).toLocaleString()}</strong>
+                      <strong>{session.sessionName || new Date(session.endedAt).toLocaleString()}</strong>
                       <span className="pill">{session.durationLabel}</span>
                     </div>
                     <p className="muted-copy" style={{ margin: "8px 0 0" }}>
+                      {new Date(session.endedAt).toLocaleString()}
+                    </p>
+                    <p className="muted-copy" style={{ margin: "6px 0 0" }}>
                       {session.upload?.fileName || "No supporting file"}
                     </p>
                     <div style={{ marginTop: 10 }}>

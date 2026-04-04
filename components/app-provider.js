@@ -14,6 +14,15 @@ import { AGENTS } from "../lib/agents";
 const AppContext = createContext(null);
 const STORAGE_KEY = "pitchmirror-state-v1";
 
+function buildDefaultComparison() {
+  return {
+    status: "idle",
+    baselineSessionId: "",
+    result: null,
+    error: "",
+  };
+}
+
 function buildDefaultEvaluation(agent) {
   return {
     score: 0,
@@ -36,6 +45,7 @@ function buildInitialAgentState() {
         contextText: "",
         error: "",
       },
+      sessionName: "",
       customContextText: "",
       session: {
         status: "idle",
@@ -55,6 +65,7 @@ function buildPersistedAgents(agents) {
   return AGENTS.reduce((acc, agent) => {
     const current = agents?.[agent.slug] || initial[agent.slug];
     acc[agent.slug] = {
+      sessionName: current.sessionName || "",
       session: {
         status: "idle",
         muted: false,
@@ -97,6 +108,7 @@ function sanitizeState(state) {
       upload: {
         ...initial[agent.slug].upload,
       },
+      sessionName: typeof saved.sessionName === "string" ? saved.sessionName : "",
       customContextText: typeof saved.customContextText === "string" ? saved.customContextText : "",
       session: {
         ...initial[agent.slug].session,
@@ -116,6 +128,7 @@ function sanitizeState(state) {
       : [];
     sessions[agent.slug] = savedSessions.map((session) => ({
       ...session,
+      sessionName: typeof session.sessionName === "string" ? session.sessionName : "",
       transcript: Array.isArray(session.transcript) ? session.transcript : [],
       upload: session.upload || null,
       evaluation: session.evaluation || {
@@ -128,6 +141,7 @@ function sanitizeState(state) {
         topics: [],
         error: "",
       },
+      comparison: session.comparison || buildDefaultComparison(),
     }));
   }
 
@@ -208,6 +222,7 @@ export function AppProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const evaluationJobsRef = useRef(new Map());
   const resourceJobsRef = useRef(new Map());
+  const comparisonJobsRef = useRef(new Map());
 
   const dismissToast = useCallback((id) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -279,6 +294,12 @@ export function AppProvider({ children }) {
         if (resourceController) {
           resourceController.abort();
           resourceJobsRef.current.delete(key);
+        }
+
+        const comparisonController = comparisonJobsRef.current.get(key);
+        if (comparisonController) {
+          comparisonController.abort();
+          comparisonJobsRef.current.delete(key);
         }
       });
 
@@ -495,6 +516,117 @@ export function AppProvider({ children }) {
     [runResourceJob, state.sessions],
   );
 
+  const runComparisonJob = useCallback(
+    async (session, baselineSessionId) => {
+      const jobKey = `${session.agentSlug}:${session.id}`;
+      if (comparisonJobsRef.current.has(jobKey)) {
+        return;
+      }
+
+      const baselineSession = (state.sessions?.[session.agentSlug] || []).find(
+        (item) => item.id === baselineSessionId,
+      );
+
+      if (
+        !baselineSession ||
+        session.evaluation?.status !== "completed" ||
+        baselineSession.evaluation?.status !== "completed"
+      ) {
+        return;
+      }
+
+      const abortController = new AbortController();
+      comparisonJobsRef.current.set(jobKey, abortController);
+
+      patchSession(session.agentSlug, session.id, (currentSession) => ({
+        ...currentSession,
+        comparison: {
+          ...currentSession.comparison,
+          status: "processing",
+          baselineSessionId,
+          startedAt: new Date().toISOString(),
+          error: "",
+        },
+      }));
+
+      try {
+        const response = await fetch("/api/compare-sessions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentSlug: session.agentSlug,
+            currentSession: {
+              id: session.id,
+              startedAt: session.startedAt,
+              endedAt: session.endedAt,
+              durationLabel: session.durationLabel,
+              evaluation: session.evaluation.result,
+            },
+            baselineSession: {
+              id: baselineSession.id,
+              startedAt: baselineSession.startedAt,
+              endedAt: baselineSession.endedAt,
+              durationLabel: baselineSession.durationLabel,
+              evaluation: baselineSession.evaluation.result,
+            },
+          }),
+          signal: abortController.signal,
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to compare sessions.");
+        }
+
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
+          comparison: {
+            status: "completed",
+            baselineSessionId,
+            completedAt: new Date().toISOString(),
+            result: payload.comparison,
+            error: "",
+          },
+        }));
+
+        pushToast(`${session.agentName || "Session"} comparison is ready.`);
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
+          comparison: {
+            ...currentSession.comparison,
+            status: "failed",
+            baselineSessionId,
+            failedAt: new Date().toISOString(),
+            error: error.message || "Comparison failed.",
+          },
+        }));
+      } finally {
+        comparisonJobsRef.current.delete(jobKey);
+      }
+    },
+    [patchSession, pushToast, state.sessions],
+  );
+
+  const requestSessionComparison = useCallback(
+    (slug, sessionId, baselineSessionId) => {
+      const session = (state.sessions?.[slug] || []).find((item) => item.id === sessionId);
+      if (!session || !baselineSessionId) {
+        return;
+      }
+
+      void runComparisonJob(session, baselineSessionId);
+    },
+    [runComparisonJob, state.sessions],
+  );
+
   useEffect(() => {
     if (!mounted) return;
     window.localStorage.setItem(
@@ -526,9 +658,13 @@ export function AppProvider({ children }) {
         if (session.resources?.status === "processing") {
           void runResourceJob(session);
         }
+
+        if (session.comparison?.status === "processing" && session.comparison?.baselineSessionId) {
+          void runComparisonJob(session, session.comparison.baselineSessionId);
+        }
       });
     });
-  }, [mounted, runEvaluationJob, runResourceJob, state.sessions]);
+  }, [mounted, runComparisonJob, runEvaluationJob, runResourceJob, state.sessions]);
 
   useEffect(() => {
     return () => {
@@ -540,6 +676,10 @@ export function AppProvider({ children }) {
         controller.abort();
       }
       resourceJobsRef.current.clear();
+      for (const controller of comparisonJobsRef.current.values()) {
+        controller.abort();
+      }
+      comparisonJobsRef.current.clear();
     };
   }, []);
 
@@ -559,6 +699,7 @@ export function AppProvider({ children }) {
           topics: [],
           error: "",
         },
+        comparison: buildDefaultComparison(),
       };
 
       setState((current) => ({
@@ -584,6 +725,7 @@ export function AppProvider({ children }) {
       patchSession,
       clearAgentSessions,
       requestResourceFetch,
+      requestSessionComparison,
       createSessionRecord,
       dismissToast,
       toasts,
@@ -596,6 +738,7 @@ export function AppProvider({ children }) {
       patchSession,
       clearAgentSessions,
       requestResourceFetch,
+      requestSessionComparison,
       setTheme,
       state,
       toasts,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
@@ -14,7 +15,7 @@ function domainLabel(url) {
 }
 
 export function SessionDetailPage({ slug, sessionId }) {
-  const { state, requestResourceFetch } = useAppState();
+  const { state, requestResourceFetch, requestSessionComparison } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const session = (state.sessions?.[slug] || []).find((item) => item.id === sessionId);
 
@@ -30,6 +31,34 @@ export function SessionDetailPage({ slug, sessionId }) {
 
   const evaluation = session.evaluation;
   const resources = session.resources || { status: "idle", topics: [], briefs: [] };
+  const comparison = session.comparison || {
+    status: "idle",
+    baselineSessionId: "",
+    result: null,
+    error: "",
+  };
+  const comparisonOptions = useMemo(
+    () =>
+      (state.sessions?.[slug] || []).filter(
+        (item) =>
+          item.id !== sessionId &&
+          item.evaluation?.status === "completed" &&
+          item.evaluation?.result,
+      ),
+    [slug, sessionId, state.sessions],
+  );
+  const [selectedComparisonId, setSelectedComparisonId] = useState(
+    comparison.baselineSessionId || comparisonOptions[0]?.id || "",
+  );
+
+  useEffect(() => {
+    const preferredId =
+      comparison.baselineSessionId &&
+      comparisonOptions.some((item) => item.id === comparison.baselineSessionId)
+        ? comparison.baselineSessionId
+        : comparisonOptions[0]?.id || "";
+    setSelectedComparisonId(preferredId);
+  }, [comparison.baselineSessionId, comparisonOptions]);
 
   return (
     <AppShell>
@@ -43,7 +72,7 @@ export function SessionDetailPage({ slug, sessionId }) {
               <div className="eyebrow">Saved session</div>
             </div>
             <h1 className="hero-title" style={{ fontSize: "clamp(2rem, 4vw, 3.4rem)", marginTop: 0 }}>
-              {agent.name} session
+              {session.sessionName || `${agent.name} session`}
             </h1>
             <p className="hero-copy">
               Ended {new Date(session.endedAt).toLocaleString()} with a duration of {session.durationLabel}.
@@ -84,6 +113,10 @@ export function SessionDetailPage({ slug, sessionId }) {
           <div className="metric-card">
             <div className="section-title">Session information</div>
             <div className="sidebar-stack">
+              <div className="subtle-card">
+                <span className="metric-label">Session name</span>
+                <div className="metric-value">{session.sessionName || "Untitled session"}</div>
+              </div>
               <div className="subtle-card">
                 <span className="metric-label">Agent</span>
                 <div className="metric-value">{agent.name}</div>
@@ -183,6 +216,123 @@ export function SessionDetailPage({ slug, sessionId }) {
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          <div className="metric-card">
+            <div className="section-title">Session comparison</div>
+            {evaluation.status !== "completed" ? (
+              <div className="subtle-card">
+                <p className="muted-copy" style={{ margin: 0 }}>
+                  Finish the evaluation first, then compare this session with another saved {agent.name.toLowerCase()} session.
+                </p>
+              </div>
+            ) : !comparisonOptions.length ? (
+              <div className="subtle-card">
+                <p className="muted-copy" style={{ margin: 0 }}>
+                  Save at least one more completed {agent.name.toLowerCase()} session to compare progress here.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="subtle-card">
+                  <div className="button-row compare-controls">
+                    <select
+                      className="language-select compare-select"
+                      value={selectedComparisonId}
+                      onChange={(event) => setSelectedComparisonId(event.target.value)}
+                    >
+                      {comparisonOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {(option.sessionName || "Untitled session")} · {new Date(option.endedAt).toLocaleString()} · {option.durationLabel}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={!selectedComparisonId || comparison.status === "processing"}
+                      onClick={() =>
+                        requestSessionComparison(slug, sessionId, selectedComparisonId)
+                      }
+                    >
+                      {comparison.status === "processing"
+                        ? "Comparing..."
+                        : "Compare with other session"}
+                    </button>
+                  </div>
+                </div>
+
+                {comparison.status === "processing" ? (
+                  <div className="subtle-card" style={{ marginTop: 16 }}>
+                    <div className="status-chip status-warning">
+                      <span className="status-dot" />
+                      Comparison processing...
+                    </div>
+                    <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                      We are checking whether this session moved the rubric in a better direction.
+                    </p>
+                  </div>
+                ) : null}
+
+                {comparison.status === "failed" ? (
+                  <div className="subtle-card" style={{ marginTop: 16 }}>
+                    <div className="status-chip status-danger">
+                      <span className="status-dot" />
+                      Comparison failed
+                    </div>
+                    <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                      {comparison.error || "The comparison could not be completed."}
+                    </p>
+                  </div>
+                ) : null}
+
+                {comparison.status === "completed" && comparison.result ? (
+                  <div className="comparison-stack">
+                    <div className="subtle-card comparison-summary-card">
+                      <div className={`status-chip ${comparison.result.trend === "improved"
+                        ? "status-success"
+                        : comparison.result.trend === "declined"
+                          ? "status-danger"
+                          : "status-warning"}`}
+                      >
+                        <span className="status-dot" />
+                        {comparison.result.trend}
+                      </div>
+                      <p className="muted-copy" style={{ margin: "12px 0 0" }}>
+                        {comparison.result.summary}
+                      </p>
+                    </div>
+                    <div className="comparison-grid">
+                      {comparison.result.metrics.map((metric) => {
+                        const deltaPrefix = metric.delta > 0 ? "+" : "";
+                        const trendClass =
+                          metric.trend === "improved"
+                            ? "comparison-delta positive"
+                            : metric.trend === "declined"
+                              ? "comparison-delta negative"
+                              : "comparison-delta neutral";
+
+                        return (
+                          <div className="subtle-card comparison-metric-card" key={metric.label}>
+                            <div className="button-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                              <span className="metric-label">{metric.label}</span>
+                              <span className={trendClass}>{deltaPrefix}{metric.delta}</span>
+                            </div>
+                            <div className="comparison-scoreline">
+                              <span>Now {metric.currentValue}</span>
+                              <span>Earlier {metric.baselineValue}</span>
+                            </div>
+                            <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                              {metric.insight}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : null}
               </>

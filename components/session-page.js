@@ -155,6 +155,7 @@ export function SessionPage({ slug }) {
   const isCodingAgent = slug === "coding";
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
   const customContextText = agentState?.customContextText || "";
+  const sessionName = agentState?.sessionName || "";
 
   const [permissionState, setPermissionState] = useState("pending");
   const [sessionPhase, setSessionPhase] = useState("preflight");
@@ -234,6 +235,20 @@ export function SessionPage({ slug }) {
   useEffect(() => {
     mutedRef.current = agentState?.session?.muted || false;
   }, [agentState?.session?.muted]);
+
+  useEffect(() => {
+    if (!agent || !agentState) return;
+    if (sessionName.trim()) return;
+
+    patchAgent(slug, (current) => ({
+      ...current,
+      session: {
+        ...current.session,
+        status: "idle",
+      },
+    }));
+    router.replace(`/agents/${slug}`);
+  }, [agent, agentState, patchAgent, router, sessionName, slug]);
 
   useEffect(() => {
     if (!agent || !agentState) return undefined;
@@ -727,6 +742,7 @@ export function SessionPage({ slug }) {
       id: `session-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
       agentSlug: slug,
       agentName: agent.name,
+      sessionName: sessionName.trim(),
       startedAt: new Date(now.getTime() - elapsed * 1000).toISOString(),
       endedAt: now.toISOString(),
       durationLabel: formatDuration(elapsed),
