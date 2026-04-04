@@ -292,7 +292,11 @@ export function SessionPage({ slug }) {
       return undefined;
     }
 
-    if (!browserSocketRef.current || browserSocketRef.current.readyState !== WebSocket.OPEN) {
+    if (
+      sessionPhase !== "live" ||
+      !browserSocketRef.current ||
+      browserSocketRef.current.readyState !== WebSocket.OPEN
+    ) {
       setCodeSyncState("waiting");
       return undefined;
     }
@@ -314,7 +318,7 @@ export function SessionPage({ slug }) {
       );
       lastSentCodeRef.current = codeDraft;
       setCodeSyncState("synced");
-    }, 2500);
+    }, 5000);
 
     return () => {
       if (codeSyncTimerRef.current) {

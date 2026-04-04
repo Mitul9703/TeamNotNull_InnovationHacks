@@ -653,8 +653,18 @@ ${extraContext}
             return;
           }
 
-          session.sendRealtimeInput({
-            text: `Candidate code snapshot update (${msg.language || "pseudocode"}):\n${snapshot}`,
+          session.sendClientContent({
+            turns: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `Candidate code snapshot update (${msg.language || "pseudocode"}):\n${snapshot}`,
+                  },
+                ],
+              },
+            ],
+            turnComplete: false,
           });
         }
 

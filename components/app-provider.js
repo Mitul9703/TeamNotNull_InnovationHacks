@@ -136,6 +136,64 @@ function sanitizeState(state) {
   };
 }
 
+function deriveResourceBriefs(agentSlug, evaluation) {
+  const briefs = Array.isArray(evaluation?.resourceBriefs)
+    ? evaluation.resourceBriefs.filter(Boolean)
+    : [];
+
+  if (briefs.length) {
+    return briefs.slice(0, 2);
+  }
+
+  const metrics = Array.isArray(evaluation?.metrics) ? evaluation.metrics : [];
+  const sortedMetrics = [...metrics]
+    .filter((metric) => typeof metric?.value === "number")
+    .sort((a, b) => a.value - b.value);
+  const improvements = Array.isArray(evaluation?.improvements)
+    ? evaluation.improvements.filter(Boolean)
+    : [];
+
+  const fallback = [];
+
+  if (improvements[0]) {
+    fallback.push({
+      id: "fallback-1",
+      topic: sortedMetrics[0]?.label || "Primary improvement area",
+      improvement: improvements[0],
+      whyThisMatters:
+        sortedMetrics[0]?.justification ||
+        "This was one of the clearest opportunities for improvement in the evaluation.",
+      searchPhrases: [
+        `${agentSlug} interview ${improvements[0]}`,
+        `${sortedMetrics[0]?.label || "communication"} improvement practice`,
+      ],
+      resourceTypes: agentSlug === "coding"
+        ? ["youtube", "leetcode", "website"]
+        : ["youtube", "article", "website"],
+    });
+  }
+
+  if (improvements[1]) {
+    fallback.push({
+      id: "fallback-2",
+      topic: sortedMetrics[1]?.label || "Secondary improvement area",
+      improvement: improvements[1],
+      whyThisMatters:
+        sortedMetrics[1]?.justification ||
+        "This was another important skill to strengthen based on the evaluation.",
+      searchPhrases: [
+        `${agentSlug} interview ${improvements[1]}`,
+        `${sortedMetrics[1]?.label || "practice"} examples`,
+      ],
+      resourceTypes: agentSlug === "coding"
+        ? ["youtube", "leetcode", "website"]
+        : ["youtube", "article", "website"],
+    });
+  }
+
+  return fallback;
+}
+
 export function AppProvider({ children }) {
   const [state, setState] = useState(() =>
     sanitizeState({
@@ -339,6 +397,11 @@ export function AppProvider({ children }) {
           throw new Error(payload.error || "Failed to evaluate session.");
         }
 
+        const derivedBriefs = deriveResourceBriefs(
+          session.agentSlug,
+          payload.evaluation,
+        );
+
         patchSession(session.agentSlug, session.id, (currentSession) => ({
           ...currentSession,
           evaluation: {
@@ -352,28 +415,16 @@ export function AppProvider({ children }) {
             error: "",
           },
           resources: {
-            status: payload.evaluation.resourceBriefs?.length ? "processing" : "completed",
-            startedAt: payload.evaluation.resourceBriefs?.length
-              ? new Date().toISOString()
-              : currentSession.resources?.startedAt || "",
-            completedAt: payload.evaluation.resourceBriefs?.length ? "" : new Date().toISOString(),
-            briefs: payload.evaluation.resourceBriefs || [],
+            status: derivedBriefs.length ? "idle" : "completed",
+            startedAt: "",
+            completedAt: derivedBriefs.length ? "" : new Date().toISOString(),
+            briefs: derivedBriefs,
             topics: [],
             error: "",
           },
         }));
 
         pushToast(`${session.agentName || "Session"} evaluation is ready.`);
-        if (payload.evaluation.resourceBriefs?.length) {
-          void runResourceJob({
-            agentSlug: session.agentSlug,
-            id: session.id,
-            agentName: session.agentName,
-            resources: {
-              briefs: payload.evaluation.resourceBriefs,
-            },
-          });
-        }
       } catch (error) {
         if (abortController.signal.aborted) {
           return;
@@ -397,6 +448,18 @@ export function AppProvider({ children }) {
       }
     },
     [patchSession, pushToast, runResourceJob],
+  );
+
+  const requestResourceFetch = useCallback(
+    (slug, sessionId) => {
+      const session = (state.sessions?.[slug] || []).find((item) => item.id === sessionId);
+      if (!session || !session.resources?.briefs?.length) {
+        return;
+      }
+
+      void runResourceJob(session);
+    },
+    [runResourceJob, state.sessions],
   );
 
   useEffect(() => {
@@ -424,21 +487,6 @@ export function AppProvider({ children }) {
       (state.sessions[agent.slug] || []).forEach((session) => {
         if (session.evaluation?.status === "processing") {
           void runEvaluationJob(session);
-          return;
-        }
-
-        if (
-          session.evaluation?.status === "completed" &&
-          session.resources?.status === "idle" &&
-          session.evaluation?.result?.resourceBriefs?.length
-        ) {
-          void runResourceJob({
-            ...session,
-            resources: {
-              ...session.resources,
-              briefs: session.evaluation.result.resourceBriefs,
-            },
-          });
           return;
         }
 
@@ -501,6 +549,7 @@ export function AppProvider({ children }) {
       setTheme,
       patchAgent,
       patchSession,
+      requestResourceFetch,
       createSessionRecord,
       dismissToast,
       toasts,
@@ -511,6 +560,7 @@ export function AppProvider({ children }) {
       mounted,
       patchAgent,
       patchSession,
+      requestResourceFetch,
       setTheme,
       state,
       toasts,

@@ -14,7 +14,7 @@ function domainLabel(url) {
 }
 
 export function SessionDetailPage({ slug, sessionId }) {
-  const { state } = useAppState();
+  const { state, requestResourceFetch } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const session = (state.sessions?.[slug] || []).find((item) => item.id === sessionId);
 
@@ -186,9 +186,20 @@ export function SessionDetailPage({ slug, sessionId }) {
             {resources.status === "idle" ? (
               <div className="subtle-card">
                 <p className="muted-copy" style={{ margin: 0 }}>
-                  Targeted resources will appear here after evaluation identifies the
-                  top improvement areas.
+                  Evaluation found targeted improvement themes. Fetch resources only
+                  if you want videos, articles, and practice links for this session.
                 </p>
+                {resources.briefs?.length ? (
+                  <div className="button-row" style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => requestResourceFetch(slug, sessionId)}
+                    >
+                      Fetch resources
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {resources.status === "processing" ? (
@@ -212,6 +223,17 @@ export function SessionDetailPage({ slug, sessionId }) {
                 <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
                   {resources.error || "We finished the evaluation, but the web resource search did not complete."}
                 </p>
+                {resources.briefs?.length ? (
+                  <div className="button-row" style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => requestResourceFetch(slug, sessionId)}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {resources.status === "completed" && resources.topics?.length ? (
