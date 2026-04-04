@@ -7,7 +7,7 @@ const STEPS = [
   {
     number: "01",
     title: "Prep",
-    desc: "Upload a supporting PDF if you want grounded questions. The session button stays locked until processing finishes.",
+    desc: "Upload a supporting PDF if you want grounded questions.",
   },
   {
     number: "02",
@@ -26,7 +26,6 @@ export function LandingPage() {
     <AppShell>
       {/* Hero — centered */}
       <div className="hero-centered">
-        <div className="eyebrow">Claude-coded rehearsal flow</div>
         <h1 className="hero-title">
           Rehearse the room before you ever walk into it.
         </h1>

@@ -11,6 +11,33 @@ function domainLabel(url) {
   catch (_) { return url; }
 }
 
+function isYouTubeUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host === "youtube.com" || host === "youtu.be";
+  } catch (_) { return false; }
+}
+
+// YouTube SVG icon
+function YouTubeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-label="YouTube" style={{ color: "#ff0000", flexShrink: 0 }}>
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+    </svg>
+  );
+}
+
+// External link icon
+function ExternalLinkIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+      <polyline points="15 3 21 3 21 9"/>
+      <line x1="10" y1="14" x2="21" y2="3"/>
+    </svg>
+  );
+}
+
 function Spinner({ label }) {
   return (
     <div className="eval-loading-inner">
@@ -148,7 +175,6 @@ export function SessionDetailPage({ slug, sessionId }) {
 
           {evaluation.status === "processing" && (
             <>
-              {/* Shimmer skeleton while loading */}
               <div style={{ marginBottom: 4 }}>
                 <Spinner label="Analysing your session…" />
                 <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
@@ -190,7 +216,7 @@ export function SessionDetailPage({ slug, sessionId }) {
               <CollapsibleList items={evaluation.result.strengths} label="Strengths" initialMax={4} />
               <CollapsibleList items={evaluation.result.improvements} label="Areas to improve" initialMax={4} />
               {evaluation.result.recommendations?.length > 0 && (
-                <CollapsibleList items={evaluation.result.recommendations} label="Recommended next reps" initialMax={4} />
+                <CollapsibleList items={evaluation.result.recommendations} label="Recommended next steps" initialMax={4} />
               )}
             </>
           )}
@@ -203,7 +229,7 @@ export function SessionDetailPage({ slug, sessionId }) {
           {resources.status === "idle" && (
             <div className="subtle-card">
               <p className="muted-copy" style={{ margin: "0 0 14px" }}>
-                Fetch targeted videos, articles, and practice links based on your eval themes.
+                Fetch targeted videos, articles, and practice links based on your evaluation themes.
               </p>
               {resources.briefs?.length ? (
                 <button
@@ -225,7 +251,7 @@ export function SessionDetailPage({ slug, sessionId }) {
             <div className="subtle-card">
               <Spinner label="Finding resources…" />
               <p className="muted-copy" style={{ textAlign: "center", marginTop: 8, fontSize: "0.88rem" }}>
-                TinyFish is gathering articles, videos, and practice links.
+                Gathering articles, videos, and practice links.
               </p>
             </div>
           )}
@@ -256,17 +282,29 @@ export function SessionDetailPage({ slug, sessionId }) {
                     <span className="pill">{topic.items?.length || 0} resources</span>
                   </summary>
                   <div className="resource-grid">
-                    {(topic.items || []).map((item) => (
-                      <a key={`${topic.id}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="resource-card">
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                          <span className="resource-kind">{item.type || "resource"}</span>
-                          <span className="metric-label" style={{ marginBottom: 0 }}>{item.source || domainLabel(item.url)}</span>
-                        </div>
-                        <div className="resource-title">{item.title}</div>
-                        <p className="muted-copy" style={{ marginTop: 8, marginBottom: 10, fontSize: "0.88rem" }}>{item.reason}</p>
-                        <span className="link-button">Open {domainLabel(item.url)}</span>
-                      </a>
-                    ))}
+                    {(topic.items || []).map((item) => {
+                      const isYT = isYouTubeUrl(item.url);
+                      return (
+                        <a key={`${topic.id}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="resource-card">
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              {isYT ? (
+                                <YouTubeIcon />
+                              ) : (
+                                <span className="resource-kind">{item.type || "resource"}</span>
+                              )}
+                            </div>
+                            <span className="metric-label" style={{ marginBottom: 0 }}>{item.source || domainLabel(item.url)}</span>
+                          </div>
+                          <div className="resource-title">{item.title}</div>
+                          <p className="muted-copy" style={{ marginTop: 8, marginBottom: 10, fontSize: "0.88rem" }}>{item.reason}</p>
+                          <span className="link-button">
+                            <ExternalLinkIcon />
+                            Open
+                          </span>
+                        </a>
+                      );
+                    })}
                   </div>
                 </details>
               ))}
@@ -318,7 +356,11 @@ export function SessionDetailPage({ slug, sessionId }) {
                     disabled={!selectedComparisonId || comparison.status === "processing"}
                     onClick={() => requestSessionComparison(slug, sessionId, selectedComparisonId)}
                   >
-                    {comparison.status === "processing" ? "Comparing…" : "Compare"}
+                    {comparison.status === "processing" ? (
+                      <><div className="spinner spinner-sm spinner-inline" />Comparing…</>
+                    ) : (
+                      "Compare"
+                    )}
                   </button>
                 </div>
               </div>
@@ -416,7 +458,7 @@ function MetricCard({ metric }) {
             <p className="muted-copy" style={{ marginTop: 10, marginBottom: 0, fontSize: "0.85rem" }}>{metric.justification}</p>
           )}
           <button type="button" className="toggle-btn" style={{ marginTop: 8 }} onClick={() => setShowDetail(d => !d)}>
-            {showDetail ? "▲ Hide" : "▼ Detail"}
+            {showDetail ? "▲ Hide detail" : "▼ Show detail"}
           </button>
         </>
       )}

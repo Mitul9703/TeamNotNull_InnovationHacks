@@ -7,33 +7,15 @@ import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
-function UploadStatus({ upload }) {
-  if (upload.status === "uploading") {
-    return (
-      <div className="status-chip status-warning" style={{ marginTop: 10 }}>
-        <span className="status-dot" />
-        Uploading document…
-      </div>
-    );
-  }
-  if (upload.status === "success") {
-    return (
-      <div className="status-chip status-success" style={{ marginTop: 10 }}>
-        <span className="status-dot" />
-        {upload.fileName} ready
-      </div>
-    );
-  }
-  if (upload.status === "error") {
-    return (
-      <div className="status-chip status-danger" style={{ marginTop: 10 }}>
-        <span className="status-dot" />
-        {upload.error || "Upload failed."}
-      </div>
-    );
-  }
-  return null;
-}
+// Colour cycle for evaluation criteria labels
+const CRITERIA_COLORS = [
+  "criteria-label-amber",
+  "criteria-label-blue",
+  "criteria-label-green",
+  "criteria-label-purple",
+  "criteria-label-teal",
+  "criteria-label-rose",
+];
 
 function CollapsibleList({ items, initialMax = 3 }) {
   const [expanded, setExpanded] = useState(false);
@@ -66,6 +48,7 @@ export function AgentDetailPage({ slug }) {
   const agent = AGENT_LOOKUP[slug];
   const [localError, setLocalError] = useState("");
   const [criteriaExpanded, setCriteriaExpanded] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const justEnded = searchParams.get("ended") === "1";
 
   const agentState = state.agents[slug];
@@ -104,6 +87,7 @@ export function AgentDetailPage({ slug }) {
       ...current,
       upload: { ...current.upload, status: "uploading", fileName: file.name, previewUrl, previewOpen: false, contextPreview: "", error: "" },
     }));
+    setPreviewOpen(false);
     try {
       const formData = new FormData();
       formData.append("deck", file);
@@ -143,7 +127,7 @@ export function AgentDetailPage({ slug }) {
     <AppShell>
       <div className="page-single">
 
-        {/* Nav + agent header */}
+        {/* Navigation + agent header */}
         <div>
           <div className="nav-row">
             <Link href="/agents" className="btn btn-secondary">
@@ -170,16 +154,18 @@ export function AgentDetailPage({ slug }) {
           <p className="muted-copy" style={{ margin: 0 }}>{agent.scenario}</p>
         </div>
 
-        {/* Eval criteria card */}
+        {/* Evaluation criteria card */}
         <div className="metric-card">
-          <div className="section-title">Eval Criteria</div>
+          <div className="section-title">Evaluation Criteria</div>
           <p className="muted-copy" style={{ marginBottom: 0 }}>
             Your session will be scored on the following dimensions.
           </p>
           <div className="criteria-grid">
-            {visibleCriteria.map((criterion) => (
+            {visibleCriteria.map((criterion, index) => (
               <div className="subtle-card" key={criterion.label}>
-                <span className="metric-label">{criterion.label}</span>
+                <span className={`metric-label criteria-label ${CRITERIA_COLORS[index % CRITERIA_COLORS.length]}`}>
+                  {criterion.label}
+                </span>
                 <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>
                   {criterion.description}
                 </p>
@@ -251,28 +237,78 @@ export function AgentDetailPage({ slug }) {
             {/* Right: file upload */}
             <div className="subtle-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <span className="metric-label" style={{ marginBottom: 0 }}>Supporting document</span>
-              <label className="file-dropzone" htmlFor="deck-upload">
-                <span className="file-dropzone-icon">
-                  {upload.status === "success" ? "📄" : "⬆"}
-                </span>
-                <span>
-                  {upload.status === "success"
-                    ? upload.fileName
-                    : "Click to upload PDF"}
-                </span>
-                <span style={{ fontSize: "0.8rem" }}>Optional · PDF only</span>
-              </label>
+
+              {upload.status === "uploading" ? (
+                <div className="file-dropzone file-dropzone-loading">
+                  <div className="spinner spinner-sm" style={{ margin: "0 auto 8px" }} />
+                  <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>Uploading…</span>
+                </div>
+              ) : (
+                <label className="file-dropzone" htmlFor="deck-upload">
+                  <span className="file-dropzone-icon">
+                    {upload.status === "success" ? "📄" : "⬆"}
+                  </span>
+                  <span>
+                    {upload.status === "success"
+                      ? upload.fileName
+                      : "Click to upload PDF"}
+                  </span>
+                  <span style={{ fontSize: "0.8rem" }}>Optional · PDF only</span>
+                </label>
+              )}
+
               <input
                 id="deck-upload"
                 type="file"
                 accept=".pdf,application/pdf"
                 onChange={handleFileChange}
-                disabled={agentState.session.status === "active" || agentState.session.status === "starting"}
+                disabled={
+                  agentState.session.status === "active" ||
+                  agentState.session.status === "starting" ||
+                  upload.status === "uploading"
+                }
                 style={{ display: "none" }}
               />
-              <UploadStatus upload={upload} />
+
+              {upload.status === "success" && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div className="status-chip status-success">
+                    <span className="status-dot" />
+                    {upload.fileName} ready
+                  </div>
+                  {upload.previewUrl && (
+                    <button
+                      type="button"
+                      className="toggle-btn"
+                      style={{ marginTop: 0 }}
+                      onClick={() => setPreviewOpen((o) => !o)}
+                    >
+                      {previewOpen ? "▲ Hide preview" : "▼ Preview document"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {upload.status === "error" && (
+                <div className="status-chip status-danger">
+                  <span className="status-dot" />
+                  {upload.error || "Upload failed."}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* PDF preview panel */}
+          {upload.status === "success" && upload.previewUrl && previewOpen && (
+            <div style={{ marginTop: 14 }}>
+              <iframe
+                src={upload.previewUrl}
+                className="preview-frame"
+                title="Document preview"
+                style={{ height: 480 }}
+              />
+            </div>
+          )}
 
           {upload.status === "success" && upload.contextPreview ? (
             <div className="subtle-card" style={{ marginTop: 14 }}>
@@ -284,7 +320,7 @@ export function AgentDetailPage({ slug }) {
           ) : null}
         </div>
 
-        {/* Start session */}
+        {/* Start session button */}
         <div>
           {localError && (
             <p className="muted-copy" style={{ color: "var(--danger)", marginBottom: 10 }}>
@@ -297,11 +333,13 @@ export function AgentDetailPage({ slug }) {
             disabled={!canStart}
             onClick={startSession}
           >
-            {upload.status === "uploading"
-              ? "Preparing upload…"
-              : agentState.session.status === "starting"
-              ? "Starting…"
-              : "Start Session"}
+            {upload.status === "uploading" ? (
+              <><div className="spinner spinner-sm spinner-inline" />Preparing upload…</>
+            ) : agentState.session.status === "starting" ? (
+              <><div className="spinner spinner-sm spinner-inline" />Starting session…</>
+            ) : (
+              "Start Session"
+            )}
           </button>
         </div>
 
@@ -350,7 +388,7 @@ export function AgentDetailPage({ slug }) {
                   <div style={{ marginTop: 10 }}>
                     {session.evaluation?.status === "processing" ? (
                       <div className="status-chip status-warning">
-                        <span className="status-dot" />
+                        <div className="spinner spinner-xs" style={{ margin: 0 }} />
                         Evaluating…
                       </div>
                     ) : session.evaluation?.status === "failed" ? (
@@ -361,7 +399,7 @@ export function AgentDetailPage({ slug }) {
                     ) : (
                       <div className="status-chip status-success">
                         <span className="status-dot" />
-                        Eval ready
+                        Evaluation ready
                       </div>
                     )}
                   </div>

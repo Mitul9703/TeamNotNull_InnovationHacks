@@ -1387,3 +1387,359 @@ button {
     padding: 48px 0 36px;
   }
 }
+
+/* ─── EXTENDED UI POLISH ────────────────────────────────────────── */
+
+/* Animated icon theme toggle */
+.theme-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: background 200ms ease, border-color 200ms ease, transform 200ms ease;
+}
+
+.theme-toggle-icon:hover {
+  transform: scale(1.08);
+  border-color: var(--accent);
+}
+
+.theme-icon-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: icon-pop 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes icon-pop {
+  from { transform: scale(0.6) rotate(-30deg); opacity: 0; }
+  to   { transform: scale(1) rotate(0deg);    opacity: 1; }
+}
+
+/* ── Animated mic button ───────────────────────────────────── */
+.mic-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 108px;
+}
+
+.mic-icon {
+  flex-shrink: 0;
+  transition: stroke 200ms ease;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.7; transform: scale(0.92); }
+}
+
+.mic-icon-pulsing {
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── Spinner size variants ─────────────────────────────────── */
+.spinner-sm {
+  width: 22px;
+  height: 22px;
+  margin: 0 auto 10px;
+  border-width: 2.5px;
+}
+
+.spinner-xs {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-width: 2px;
+}
+
+.spinner-inline {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-width: 2px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* ── File dropzone loading state ───────────────────────────── */
+.file-dropzone-loading {
+  cursor: default;
+  border-style: solid;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* ── Colorful focus pill variants ──────────────────────────── */
+.pill-amber {
+  background: rgba(230, 177, 90, 0.18);
+  color: #c89430;
+  border: 1px solid rgba(230, 177, 90, 0.28);
+}
+[data-theme="light"] .pill-amber {
+  background: rgba(193, 143, 41, 0.14);
+  color: #8a6210;
+  border-color: rgba(193, 143, 41, 0.24);
+}
+
+.pill-blue {
+  background: rgba(87, 155, 217, 0.18);
+  color: #5090d0;
+  border: 1px solid rgba(87, 155, 217, 0.28);
+}
+[data-theme="light"] .pill-blue {
+  background: rgba(60, 120, 190, 0.14);
+  color: #2a5fa8;
+  border-color: rgba(60, 120, 190, 0.24);
+}
+
+.pill-green {
+  background: rgba(118, 185, 139, 0.18);
+  color: #52a872;
+  border: 1px solid rgba(118, 185, 139, 0.28);
+}
+[data-theme="light"] .pill-green {
+  background: rgba(58, 143, 97, 0.14);
+  color: #236b40;
+  border-color: rgba(58, 143, 97, 0.24);
+}
+
+.pill-purple {
+  background: rgba(164, 131, 255, 0.18);
+  color: #9b72f5;
+  border: 1px solid rgba(164, 131, 255, 0.28);
+}
+[data-theme="light"] .pill-purple {
+  background: rgba(120, 80, 220, 0.14);
+  color: #6030c0;
+  border-color: rgba(120, 80, 220, 0.24);
+}
+
+.pill-teal {
+  background: rgba(87, 199, 199, 0.18);
+  color: #38b2b2;
+  border: 1px solid rgba(87, 199, 199, 0.28);
+}
+[data-theme="light"] .pill-teal {
+  background: rgba(40, 158, 158, 0.14);
+  color: #0e7e7e;
+  border-color: rgba(40, 158, 158, 0.24);
+}
+
+.pill-rose {
+  background: rgba(240, 100, 140, 0.18);
+  color: #e05080;
+  border: 1px solid rgba(240, 100, 140, 0.28);
+}
+[data-theme="light"] .pill-rose {
+  background: rgba(200, 60, 100, 0.14);
+  color: #a02050;
+  border-color: rgba(200, 60, 100, 0.24);
+}
+
+.pill-emerald {
+  background: rgba(52, 211, 153, 0.18);
+  color: #2abd8a;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  font-size: 0.82rem;
+}
+[data-theme="light"] .pill-emerald {
+  background: rgba(20, 170, 110, 0.14);
+  color: #0a7040;
+  border-color: rgba(20, 170, 110, 0.24);
+}
+
+/* ── Agent card background treatments ──────────────────────── */
+.agent-bg-professor {
+  background-image:
+    radial-gradient(ellipse at top right, rgba(230, 177, 90, 0.15), transparent 55%),
+    radial-gradient(ellipse at bottom left, rgba(217, 119, 87, 0.08), transparent 50%);
+}
+
+.agent-bg-recruiter {
+  background-image:
+    radial-gradient(ellipse at top right, rgba(87, 155, 217, 0.16), transparent 55%),
+    radial-gradient(ellipse at bottom left, rgba(87, 155, 217, 0.06), transparent 50%);
+}
+
+.agent-bg-investor {
+  background-image:
+    radial-gradient(ellipse at top right, rgba(118, 185, 139, 0.16), transparent 55%),
+    radial-gradient(ellipse at bottom left, rgba(118, 185, 139, 0.06), transparent 50%);
+}
+
+.agent-bg-coding {
+  background-image:
+    radial-gradient(ellipse at top right, rgba(164, 131, 255, 0.18), transparent 55%),
+    radial-gradient(ellipse at bottom left, rgba(164, 131, 255, 0.07), transparent 50%);
+}
+
+.agent-bg-custom {
+  background-image:
+    radial-gradient(ellipse at top right, rgba(217, 119, 87, 0.14), transparent 45%),
+    radial-gradient(ellipse at bottom right, rgba(164, 131, 255, 0.12), transparent 45%),
+    radial-gradient(ellipse at bottom left, rgba(87, 199, 199, 0.10), transparent 45%);
+}
+
+/* ── Custom agent card standout ────────────────────────────── */
+.agent-card-custom {
+  border-color: rgba(164, 131, 255, 0.35);
+  position: relative;
+  overflow: hidden;
+}
+
+.agent-card-custom::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid transparent;
+  background: linear-gradient(135deg, rgba(217, 119, 87, 0.4), rgba(164, 131, 255, 0.4), rgba(87, 199, 199, 0.4)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: border-shimmer 3s linear infinite;
+  background-size: 200% 200%;
+}
+
+@keyframes border-shimmer {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.agent-card-custom:hover {
+  border-color: rgba(164, 131, 255, 0.55);
+}
+
+/* ── Per-agent badge colours ───────────────────────────────── */
+.agent-badge-professor {
+  background: rgba(230, 177, 90, 0.18);
+  color: #c89430;
+  border: 1px solid rgba(230, 177, 90, 0.28);
+}
+[data-theme="light"] .agent-badge-professor {
+  background: rgba(193, 143, 41, 0.14);
+  color: #7a5208;
+}
+
+.agent-badge-recruiter {
+  background: rgba(87, 155, 217, 0.18);
+  color: #4a8cc4;
+  border: 1px solid rgba(87, 155, 217, 0.28);
+}
+[data-theme="light"] .agent-badge-recruiter {
+  background: rgba(60, 120, 190, 0.14);
+  color: #1e5090;
+}
+
+.agent-badge-investor {
+  background: rgba(118, 185, 139, 0.18);
+  color: #3d9e60;
+  border: 1px solid rgba(118, 185, 139, 0.28);
+}
+[data-theme="light"] .agent-badge-investor {
+  background: rgba(58, 143, 97, 0.14);
+  color: #1a6038;
+}
+
+.agent-badge-coding {
+  background: rgba(164, 131, 255, 0.18);
+  color: #8b60f0;
+  border: 1px solid rgba(164, 131, 255, 0.28);
+}
+[data-theme="light"] .agent-badge-coding {
+  background: rgba(120, 80, 220, 0.14);
+  color: #5020b0;
+}
+
+.agent-badge-custom {
+  background: linear-gradient(90deg, rgba(217, 119, 87, 0.16), rgba(164, 131, 255, 0.16));
+  color: var(--accent-strong);
+  border: 1px solid rgba(164, 131, 255, 0.24);
+}
+[data-theme="light"] .agent-badge-custom {
+  color: var(--accent);
+}
+
+/* ── Evaluation criteria label colours ─────────────────────── */
+.criteria-label {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.criteria-label-amber {
+  background: rgba(230, 177, 90, 0.18);
+  color: #c89430;
+  border: 1px solid rgba(230, 177, 90, 0.28);
+}
+[data-theme="light"] .criteria-label-amber { background: rgba(193, 143, 41, 0.14); color: #7a5208; }
+
+.criteria-label-blue {
+  background: rgba(87, 155, 217, 0.18);
+  color: #4a8cc4;
+  border: 1px solid rgba(87, 155, 217, 0.28);
+}
+[data-theme="light"] .criteria-label-blue { background: rgba(60, 120, 190, 0.14); color: #1e5090; }
+
+.criteria-label-green {
+  background: rgba(118, 185, 139, 0.18);
+  color: #3d9e60;
+  border: 1px solid rgba(118, 185, 139, 0.28);
+}
+[data-theme="light"] .criteria-label-green { background: rgba(58, 143, 97, 0.14); color: #1a6038; }
+
+.criteria-label-purple {
+  background: rgba(164, 131, 255, 0.18);
+  color: #8b60f0;
+  border: 1px solid rgba(164, 131, 255, 0.28);
+}
+[data-theme="light"] .criteria-label-purple { background: rgba(120, 80, 220, 0.14); color: #5020b0; }
+
+.criteria-label-teal {
+  background: rgba(87, 199, 199, 0.18);
+  color: #2aacac;
+  border: 1px solid rgba(87, 199, 199, 0.28);
+}
+[data-theme="light"] .criteria-label-teal { background: rgba(40, 158, 158, 0.14); color: #0a6868; }
+
+.criteria-label-rose {
+  background: rgba(240, 100, 140, 0.18);
+  color: #d04068;
+  border: 1px solid rgba(240, 100, 140, 0.28);
+}
+[data-theme="light"] .criteria-label-rose { background: rgba(200, 60, 100, 0.14); color: #901838; }
+
+/* ── YouTube icon in resource cards ────────────────────────── */
+.resource-kind-youtube {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ff0000;
+}
+
+/* ── External link icon in resource cards ──────────────────── */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-strong);
+  font-size: 0.85rem;
+}
+
