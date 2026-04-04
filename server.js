@@ -789,7 +789,7 @@ ${extraContext}
           }
 
           session.sendRealtimeInput({
-            text: `Candidate code snapshot update (${msg.language || "pseudocode"}):\n${snapshot}`,
+            text: `For your internal interview context only, here is the candidate's current code in ${msg.language || "pseudocode"}.\nDo not read it aloud, do not quote it verbatim, and do not answer with code.\n\n${snapshot}`,
           });
         }
 
