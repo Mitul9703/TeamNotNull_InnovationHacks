@@ -188,6 +188,7 @@ export function SessionPage({ slug }) {
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
   const isCodingAgent = slug === "coding";
+  const isInvestorAgent = slug === "investor";
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
   const customContextText = agentState?.customContextText || "";
   const sessionName = agentState?.sessionName || "";
@@ -203,13 +204,20 @@ export function SessionPage({ slug }) {
   const [codeLanguage, setCodeLanguage] = useState(codingLanguages[0] || "JavaScript");
   const [codeDraft, setCodeDraft] = useState("");
   const [codeSyncState, setCodeSyncState] = useState("idle");
+  const [screenShareState, setScreenShareState] = useState({
+    status: "idle",
+    surface: "screen",
+    error: "",
+  });
   const codeExtensions = useMemo(() => getCodingLanguageExtensions(codeLanguage), [codeLanguage]);
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+  const screenPreviewRef = useRef(null);
   const simliClientRef = useRef(null);
   const browserSocketRef = useRef(null);
   const mediaStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
   const processorNodeRef = useRef(null);
@@ -224,6 +232,8 @@ export function SessionPage({ slug }) {
   const modelBufferRef = useRef("");
   const userBufferRef = useRef("");
   const codeSyncTimerRef = useRef(null);
+  const screenFrameTimerRef = useRef(null);
+  const screenCaptureCanvasRef = useRef(null);
   const lastSentCodeRef = useRef("");
   const avatarProfileRef = useRef(null);
   const transcriptEntries = [
@@ -368,6 +378,22 @@ export function SessionPage({ slug }) {
   }, [transcriptEntries]);
 
   useEffect(() => {
+    const preview = screenPreviewRef.current;
+    if (!preview) return;
+
+    if (screenStreamRef.current) {
+      preview.srcObject = screenStreamRef.current;
+      const playPromise = preview.play?.();
+      if (playPromise?.catch) {
+        playPromise.catch(() => {});
+      }
+      return;
+    }
+
+    preview.srcObject = null;
+  }, [screenShareState.status]);
+
+  useEffect(() => {
     if (!isCodingAgent) return undefined;
     if (codeSyncTimerRef.current) {
       window.clearTimeout(codeSyncTimerRef.current);
@@ -414,6 +440,199 @@ export function SessionPage({ slug }) {
       }
     };
   }, [codeDraft, codeLanguage, isCodingAgent, sessionPhase]);
+
+  useEffect(() => {
+    if (!isInvestorAgent || screenShareState.status !== "active" || sessionPhase !== "live") {
+      if (screenFrameTimerRef.current) {
+        window.clearInterval(screenFrameTimerRef.current);
+        screenFrameTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    const captureFrame = () => {
+      const socket = browserSocketRef.current;
+      const preview = screenPreviewRef.current;
+      const stream = screenStreamRef.current;
+
+      if (
+        !socket ||
+        socket.readyState !== WebSocket.OPEN ||
+        !preview ||
+        !stream ||
+        preview.readyState < 2 ||
+        !preview.videoWidth ||
+        !preview.videoHeight
+      ) {
+        return;
+      }
+
+      let canvas = screenCaptureCanvasRef.current;
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        screenCaptureCanvasRef.current = canvas;
+      }
+
+      const maxWidth = 1280;
+      const scale = Math.min(1, maxWidth / preview.videoWidth);
+      canvas.width = Math.max(1, Math.round(preview.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(preview.videoHeight * scale));
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return;
+      }
+
+      context.drawImage(preview, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+      const base64 = dataUrl.split(",")[1];
+
+      if (!base64) {
+        return;
+      }
+
+      socket.send(
+        JSON.stringify({
+          type: "screen_frame",
+          data: base64,
+          mimeType: "image/jpeg",
+          surface: screenShareState.surface,
+        }),
+      );
+    };
+
+    captureFrame();
+    screenFrameTimerRef.current = window.setInterval(captureFrame, 1200);
+
+    return () => {
+      if (screenFrameTimerRef.current) {
+        window.clearInterval(screenFrameTimerRef.current);
+        screenFrameTimerRef.current = null;
+      }
+    };
+  }, [isInvestorAgent, screenShareState.status, screenShareState.surface, sessionPhase]);
+
+  function normalizeDisplaySurface(displaySurface) {
+    if (displaySurface === "browser") return "tab";
+    if (displaySurface === "window") return "window";
+    if (displaySurface === "monitor") return "screen";
+    return "screen";
+  }
+
+  function getScreenShareStatusLabel() {
+    if (screenShareState.status !== "active") {
+      return "Not sharing";
+    }
+
+    if (screenShareState.surface === "tab") {
+      return "Sharing tab";
+    }
+
+    if (screenShareState.surface === "window") {
+      return "Sharing window";
+    }
+
+    return "Sharing screen";
+  }
+
+  async function notifyScreenShareState(active, surface = "screen") {
+    const socket = browserSocketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "screen_share_state",
+        active,
+        surface,
+      }),
+    );
+  }
+
+  async function stopScreenShare() {
+    if (screenFrameTimerRef.current) {
+      window.clearInterval(screenFrameTimerRef.current);
+      screenFrameTimerRef.current = null;
+    }
+
+    const stream = screenStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+    }
+
+    if (screenPreviewRef.current) {
+      screenPreviewRef.current.srcObject = null;
+    }
+
+    setScreenShareState({
+      status: "idle",
+      surface: "screen",
+      error: "",
+    });
+
+    await notifyScreenShareState(false);
+  }
+
+  async function startScreenShare() {
+    if (!isInvestorAgent || sessionPhase !== "live") {
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setScreenShareState({
+        status: "error",
+        surface: "screen",
+        error: "Screen sharing is not supported in this browser.",
+      });
+      return;
+    }
+
+    try {
+      setScreenShareState((current) => ({
+        ...current,
+        status: "requesting",
+        error: "",
+      }));
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          frameRate: { ideal: 5, max: 8 },
+        },
+        audio: false,
+      });
+
+      const [track] = stream.getVideoTracks();
+      const surface = normalizeDisplaySurface(track?.getSettings?.().displaySurface);
+
+      track?.addEventListener("ended", () => {
+        void stopScreenShare();
+      }, { once: true });
+
+      screenStreamRef.current = stream;
+      setScreenShareState({
+        status: "active",
+        surface,
+        error: "",
+      });
+
+      await notifyScreenShareState(true, surface);
+    } catch (error) {
+      const denied =
+        error?.name === "NotAllowedError" ||
+        error?.name === "PermissionDeniedError" ||
+        error?.name === "AbortError";
+
+      setScreenShareState({
+        status: denied ? "denied" : "error",
+        surface: "screen",
+        error: denied
+          ? "Screen sharing permission was denied. You can keep the session going without a demo."
+          : error?.message || "Screen sharing could not be started.",
+      });
+    }
+  }
 
   async function createMicPipeline(mediaStream) {
     const audioContext = new window.AudioContext();
@@ -715,6 +934,20 @@ export function SessionPage({ slug }) {
         mediaStreamRef.current = null;
       }
 
+      if (screenFrameTimerRef.current) {
+        window.clearInterval(screenFrameTimerRef.current);
+        screenFrameTimerRef.current = null;
+      }
+
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((track) => track.stop());
+        screenStreamRef.current = null;
+      }
+
+      if (screenPreviewRef.current) {
+        screenPreviewRef.current.srcObject = null;
+      }
+
       if (browserSocketRef.current) {
         browserSocketRef.current.close();
         browserSocketRef.current = null;
@@ -730,6 +963,11 @@ export function SessionPage({ slug }) {
       modelBufferRef.current = "";
       setUserBuffer("");
       userBufferRef.current = "";
+      setScreenShareState({
+        status: "idle",
+        surface: "screen",
+        error: "",
+      });
     })();
 
     await cleanupPromiseRef.current;
@@ -1011,6 +1249,92 @@ export function SessionPage({ slug }) {
                 </div>
               </div>
             </div>
+          ) : isInvestorAgent ? (
+            <div className="investor-sidebar">
+              <div className="transcript-card">
+                <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div className="section-title">Live Product Demo</div>
+                    <p className="muted-copy" style={{ margin: "6px 0 0" }}>
+                      Share a tab or window so the investor agent can watch your product demo.
+                    </p>
+                  </div>
+                  <div className={`status-chip ${screenShareState.status === "active" ? "status-success" : screenShareState.status === "denied" || screenShareState.status === "error" ? "status-danger" : ""}`}>
+                    <span className="status-dot" />
+                    {getScreenShareStatusLabel()}
+                  </div>
+                </div>
+                <div className="button-row" style={{ marginTop: 14 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={startScreenShare}
+                    disabled={sessionPhase !== "live" || screenShareState.status === "requesting" || screenShareState.status === "active"}
+                  >
+                    {screenShareState.status === "requesting" ? "Requesting access..." : "Share Demo"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={stopScreenShare}
+                    disabled={screenShareState.status !== "active"}
+                  >
+                    Stop Sharing
+                  </button>
+                </div>
+                {screenShareState.error ? (
+                  <div className="subtle-card" style={{ marginTop: 14 }}>
+                    <div className="status-chip status-danger">
+                      <span className="status-dot" />
+                      Demo sharing unavailable
+                    </div>
+                    <p className="muted-copy" style={{ margin: "10px 0 0" }}>
+                      {screenShareState.error}
+                    </p>
+                  </div>
+                ) : null}
+                <div className={`screen-preview-shell ${screenShareState.status === "active" ? "screen-preview-active" : ""}`}>
+                  {screenShareState.status === "active" ? (
+                    <video
+                      ref={screenPreviewRef}
+                      className="screen-preview-video"
+                      autoPlay
+                      playsInline
+                      muted
+                    />
+                  ) : (
+                    <div className="screen-preview-empty">
+                      <div className="screen-preview-title">Not sharing</div>
+                      <p className="muted-copy" style={{ margin: "8px 0 0" }}>
+                        Start a live demo whenever you want the investor to react to what is visibly on screen.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="transcript-card">
+                <div className="section-title">Live transcript</div>
+                <p className="muted-copy">Current status: {statusText}</p>
+                <div className="transcript-list transcript-list-compact" ref={transcriptListRef}>
+                  {transcriptEntries.length ? (
+                    transcriptEntries.map((entry, index) => (
+                      <div className="transcript-item" key={entry.id || `${entry.role}-${index}`}>
+                        <div className="transcript-role">
+                          {entry.role}
+                          {entry.live ? " • Live" : ""}
+                        </div>
+                        <p className="transcript-text">{entry.text}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      Transcript will appear here after the investor begins the session.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="transcript-card">
               <div className="section-title">Live transcript</div>
@@ -1094,6 +1418,12 @@ export function SessionPage({ slug }) {
             ) : null}
           </div>
           <div className="footer-cluster">
+            {isInvestorAgent ? (
+              <div className={`status-chip ${screenShareState.status === "active" ? "status-success" : screenShareState.status === "denied" || screenShareState.status === "error" ? "status-danger" : ""}`}>
+                <span className="status-dot" />
+                {getScreenShareStatusLabel()}
+              </div>
+            ) : null}
             <button type="button" className="btn btn-danger" onClick={endSession}>
               End call
             </button>

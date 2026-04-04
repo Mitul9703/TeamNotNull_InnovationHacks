@@ -24,8 +24,6 @@ const nextApp = next({ dev, hostname, port });
 const handle = nextApp.getRequestHandler();
 const upload = multer({ dest: "uploads/" });
 
-let codingQuestionIndex = 0;
-
 const evaluationResponseSchema = {
   type: Type.OBJECT,
   required: [
@@ -201,20 +199,6 @@ Selected language: ${coding.language || "Unspecified"}
 Latest candidate code:
 ${coding.finalCode?.trim() || "No code was saved."}
   `.trim();
-}
-
-function selectCodingQuestion(agentConfig) {
-  const bank = Array.isArray(agentConfig.codingQuestionBank)
-    ? agentConfig.codingQuestionBank
-    : [];
-
-  if (!bank.length) {
-    return null;
-  }
-
-  const question = bank[codingQuestionIndex % bank.length];
-  codingQuestionIndex += 1;
-  return question;
 }
 
 function normalizeEvaluationResult(agent, rawResult) {
@@ -502,25 +486,6 @@ function registerLiveBridge(server) {
     }
 
     async function connectLive() {
-      const hasCustomCodingPrompt = agentSlug === "coding" && !!sessionCustomContext;
-      const selectedCodingQuestion =
-        agentSlug === "coding" && !hasCustomCodingPrompt
-          ? selectCodingQuestion(agentConfig)
-          : null;
-      const codingQuestionContext = selectedCodingQuestion
-        ? `
-
-For this coding session, you must use this exact interview question and no other:
-Title: ${selectedCodingQuestion.title}
-Difficulty: ${selectedCodingQuestion.difficulty}
-Prompt: ${selectedCodingQuestion.prompt}
-
-Important:
-- Introduce this exact problem aloud near the start of the interview.
-- Do not switch to palindrome or any other coding prompt.
-- Keep the interview anchored to this question for the rest of the session.
-`
-        : "";
       const extraContext = sessionUploadContextText
         ? `
 
@@ -567,8 +532,6 @@ ${agentSlug === "coding"
 ${agentConfig.systemPrompt}
 
 ${customTextContext}
-
-${codingQuestionContext}
 
 ${extraContext}
           `.trim(),
@@ -803,6 +766,43 @@ ${extraContext}
 
           session.sendRealtimeInput({
             text: `For your internal interview context only, here is the candidate's current code in ${msg.language || "pseudocode"}.\nDo not read it aloud, do not quote it verbatim, and do not answer with code.\n\n${snapshot}`,
+          });
+        }
+
+        if (msg.type === "screen_share_state") {
+          if (!liveConnected || !session) {
+            return;
+          }
+
+          const surface = (msg.surface || "screen").trim();
+
+          if (msg.active) {
+            session.sendRealtimeInput({
+              text:
+                `The founder has started sharing a live product demo from a ${surface}. ` +
+                "Use what is visibly shown as passive visual context only. " +
+                "Ask realistic investor questions about clarity, differentiation, usability, GTM implications, monetization implications, and whether the demo supports the spoken pitch. " +
+                "Do not claim to click, inspect hidden state, or see anything outside the visible screen frames. " +
+                "Do not interrupt for routine navigation moments unless there is a meaningful investor question to ask.",
+            });
+          } else {
+            session.sendRealtimeInput({
+              text:
+                "The live product demo is no longer being shared. Continue the investor conversation using only the spoken discussion and any grounded context already provided.",
+            });
+          }
+        }
+
+        if (msg.type === "screen_frame") {
+          if (!liveConnected || !session || !msg.data) {
+            return;
+          }
+
+          session.sendRealtimeInput({
+            video: {
+              data: msg.data,
+              mimeType: msg.mimeType || "image/jpeg",
+            },
           });
         }
 
