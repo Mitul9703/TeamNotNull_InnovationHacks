@@ -700,6 +700,49 @@ button {
   color: var(--accent-strong);
 }
 
+.session-list-item {
+  display: block;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+
+.session-list-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(217, 119, 87, 0.38);
+}
+
+.session-list-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toast-stack {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+}
+
+.toast {
+  width: 100%;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

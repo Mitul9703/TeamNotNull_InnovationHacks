@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.46.0",
+    "assemblyai": "^4.28.0",
     "buffer": "^6.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

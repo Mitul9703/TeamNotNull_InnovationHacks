@@ -8,7 +8,7 @@ import {
   LogLevel,
   generateSimliSessionToken,
 } from "simli-client";
-import { AGENT_LOOKUP, STATIC_POST_SESSION_METRICS } from "../lib/agents";
+import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -113,7 +113,7 @@ function formatDuration(totalSeconds) {
 
 export function SessionPage({ slug }) {
   const router = useRouter();
-  const { state, patchAgent } = useAppState();
+  const { state, patchAgent, createSessionRecord } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
@@ -122,6 +122,7 @@ export function SessionPage({ slug }) {
   const [sessionPhase, setSessionPhase] = useState("preflight");
   const [statusText, setStatusText] = useState("Preparing rehearsal room...");
   const [modelBuffer, setModelBuffer] = useState("");
+  const [userBuffer, setUserBuffer] = useState("");
   const [transcript, setTranscript] = useState([]);
   const [elapsed, setElapsed] = useState(0);
   const [startAttempt, setStartAttempt] = useState(0);
@@ -140,11 +141,51 @@ export function SessionPage({ slug }) {
   const mutedRef = useRef(false);
   const timerRef = useRef(null);
   const endedRef = useRef(false);
+  const liveClosedRef = useRef(false);
   const transcriptListRef = useRef(null);
   const modelBufferRef = useRef("");
-  const transcriptEntries = modelBuffer.trim()
-    ? [...transcript, { id: "live-model", role: agent?.name || "Agent", text: modelBuffer.trim(), live: true }]
-    : transcript;
+  const userBufferRef = useRef("");
+  const transcriptEntries = [
+    ...transcript,
+    ...(userBuffer.trim()
+      ? [{ id: "live-user", role: "You", text: userBuffer.trim(), live: true }]
+      : []),
+    ...(modelBuffer.trim()
+      ? [{ id: "live-model", role: agent?.name || "Agent", text: modelBuffer.trim(), live: true }]
+      : []),
+  ];
+
+  function mergeTranscriptChunk(previous, incoming) {
+    const next = (incoming || "").trim();
+    if (!next) return previous;
+    if (!previous) return next;
+    if (next.startsWith(previous)) return next;
+    if (previous.startsWith(next)) return previous;
+    return `${previous} ${next}`.trim();
+  }
+
+  function flushUserTranscript(finalText) {
+    const cleaned = (finalText || "").trim();
+    if (!cleaned) return;
+
+    setTranscript((current) => [
+      ...current,
+      {
+        id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "You",
+        text: cleaned,
+        live: false,
+      },
+    ]);
+  }
+
+  function finalizeUserBuffer() {
+    const finalText = userBufferRef.current.trim();
+    if (!finalText) return;
+    flushUserTranscript(finalText);
+    setUserBuffer("");
+    userBufferRef.current = "";
+  }
 
   useEffect(() => {
     mutedRef.current = agentState?.session?.muted || false;
@@ -157,6 +198,7 @@ export function SessionPage({ slug }) {
     async function initializeSession() {
       if (startedRef.current) return;
       endedRef.current = false;
+      liveClosedRef.current = false;
       startedRef.current = true;
       patchAgent(slug, (current) => ({
         ...current,
@@ -228,7 +270,7 @@ export function SessionPage({ slug }) {
     const element = transcriptListRef.current;
     if (!element) return;
     element.scrollTop = element.scrollHeight;
-  }, [transcript]);
+  }, [transcriptEntries]);
 
   async function createMicPipeline(mediaStream) {
     const audioContext = new window.AudioContext();
@@ -287,6 +329,14 @@ export function SessionPage({ slug }) {
         return;
       }
 
+      if (message.type === "live_closed") {
+        liveClosedRef.current = true;
+        setSessionPhase("ended");
+        setStatusText(message.message || "Gemini Live session ended.");
+        void performCleanup();
+        return;
+      }
+
       if (message.type === "error") {
         setSessionPhase("error");
         setStatusText(message.message || "The session encountered an error.");
@@ -295,10 +345,21 @@ export function SessionPage({ slug }) {
 
       if (message.type === "model_text") {
         setModelBuffer((current) => {
-          const next = `${current}${message.text || ""}`;
+          const next = mergeTranscriptChunk(current, message.text || "");
           modelBufferRef.current = next;
           return next;
         });
+        return;
+      }
+
+      if (message.type === "user_transcription") {
+        const nextText = (message.text || "").trim();
+        setUserBuffer(nextText);
+        userBufferRef.current = nextText;
+
+        if (message.finished) {
+          finalizeUserBuffer();
+        }
         return;
       }
 
@@ -323,10 +384,10 @@ export function SessionPage({ slug }) {
             },
           ]);
           socket.send(JSON.stringify({ type: "save_model_text", text: finalText }));
-        }
-        setModelBuffer("");
-        modelBufferRef.current = "";
-        return;
+      }
+      setModelBuffer("");
+      modelBufferRef.current = "";
+      return;
       }
 
       if (message.type === "history") {
@@ -502,6 +563,8 @@ export function SessionPage({ slug }) {
       }
       setModelBuffer("");
       modelBufferRef.current = "";
+      setUserBuffer("");
+      userBufferRef.current = "";
     })();
 
     await cleanupPromiseRef.current;
@@ -524,9 +587,55 @@ export function SessionPage({ slug }) {
     endedRef.current = true;
     setSessionPhase("ended");
     setStatusText("Ending rehearsal room...");
+    const transcriptSnapshot = [...transcript];
+    const finalUserText = userBufferRef.current.trim();
+    const finalModelText = modelBufferRef.current.trim();
+
+    if (finalUserText) {
+      transcriptSnapshot.push({
+        id: `user-${Date.now()}-final`,
+        role: "You",
+        text: finalUserText,
+        live: false,
+      });
+    }
+
+    if (finalModelText) {
+      transcriptSnapshot.push({
+        id: `model-${Date.now()}-final`,
+        role: agent.name,
+        text: finalModelText,
+        live: false,
+      });
+    }
+
     await performCleanup();
+    const now = new Date();
+    createSessionRecord({
+      id: `session-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+      agentSlug: slug,
+      agentName: agent.name,
+      startedAt: new Date(now.getTime() - elapsed * 1000).toISOString(),
+      endedAt: now.toISOString(),
+      durationLabel: formatDuration(elapsed),
+      transcript: transcriptSnapshot,
+      upload: upload.fileName
+        ? {
+            fileName: upload.fileName,
+            contextPreview: upload.contextPreview,
+          }
+        : null,
+    });
     patchAgent(slug, (current) => ({
       ...current,
+      upload: {
+        status: "idle",
+        fileName: "",
+        previewUrl: "",
+        previewOpen: false,
+        contextPreview: "",
+        error: "",
+      },
       session: {
         ...current.session,
         status: "idle",
@@ -536,7 +645,6 @@ export function SessionPage({ slug }) {
         }),
         lastDurationLabel: formatDuration(elapsed),
       },
-      evaluation: STATIC_POST_SESSION_METRICS[slug] || current.evaluation,
     }));
     router.replace(`/agents/${slug}?ended=1`);
   }
@@ -634,6 +742,20 @@ export function SessionPage({ slug }) {
                   <div className="button-row" style={{ justifyContent: "center", marginTop: 16 }}>
                     <button type="button" className="btn btn-danger" onClick={endSession}>
                       Leave room
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {sessionPhase === "ended" && liveClosedRef.current && (
+              <div className="video-overlay">
+                <div className="overlay-card">
+                  <h2 className="overlay-title">Session ended</h2>
+                  <p className="muted-copy">{statusText}</p>
+                  <div className="button-row" style={{ justifyContent: "center", marginTop: 16 }}>
+                    <button type="button" className="btn btn-danger" onClick={endSession}>
+                      Back to setup
                     </button>
                   </div>
                 </div>

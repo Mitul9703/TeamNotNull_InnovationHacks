@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useAppState } from "./app-provider";
 
 export function AppShell({ children, compact = false }) {
-  const { state, setTheme } = useAppState();
+  const { state, setTheme, toasts, dismissToast } = useAppState();
   const isLight = state.theme === "light";
 
   return (
@@ -32,6 +32,20 @@ export function AppShell({ children, compact = false }) {
           </button>
         </header>
         {children}
+        {toasts.length ? (
+          <div className="toast-stack">
+            {toasts.map((toast) => (
+              <button
+                type="button"
+                key={toast.id}
+                className="toast"
+                onClick={() => dismissToast(toast.id)}
+              >
+                {toast.message}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

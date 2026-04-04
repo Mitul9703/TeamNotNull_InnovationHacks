@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { AGENT_LOOKUP } from "../lib/agents";
+import { AGENT_LOOKUP, EVALUATION_CRITERIA } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -53,8 +53,7 @@ export function AgentDetailPage({ slug }) {
 
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
-  const evaluation = agentState?.evaluation;
-  const rating = agentState?.rating || 0;
+  const pastSessions = state.sessions?.[slug] || [];
 
   const canStart = useMemo(() => {
     return upload.status !== "uploading" && agentState.session.status !== "starting";
@@ -164,13 +163,6 @@ export function AgentDetailPage({ slug }) {
     router.push(`/session/${slug}`);
   }
 
-  function setRating(value) {
-    patchAgent(slug, (current) => ({
-      ...current,
-      rating: value,
-    }));
-  }
-
   return (
     <AppShell>
       <div className="agent-layout">
@@ -261,20 +253,17 @@ export function AgentDetailPage({ slug }) {
 
         <div className="sidebar-stack">
           <div className="metric-card">
-            <div className="section-title">Evaluation dashboard</div>
-            <div className="dashboard-score">{evaluation.score}/100</div>
+            <div className="section-title">Evaluation criteria</div>
             <p className="muted-copy">
-              Static sample evaluation for now. This updates visually after a
-              call ends without changing your backend pipeline.
+              This agent will score each saved session on the following dimensions after the evaluation pipeline finishes.
             </p>
             <div className="metrics-grid">
-              {evaluation.metrics.map((metric) => (
-                <div className="subtle-card" key={metric.label}>
-                  <span className="metric-label">{metric.label}</span>
-                  <div className="metric-value">{metric.value}%</div>
-                  <div className="progress" style={{ marginTop: 10 }}>
-                    <span style={{ width: `${metric.value}%` }} />
-                  </div>
+              {EVALUATION_CRITERIA.map((criterion) => (
+                <div className="subtle-card" key={criterion.label}>
+                  <span className="metric-label">{criterion.label}</span>
+                  <p className="muted-copy" style={{ marginBottom: 0 }}>
+                    {criterion.description}
+                  </p>
                 </div>
               ))}
             </div>
@@ -282,11 +271,11 @@ export function AgentDetailPage({ slug }) {
 
           <div className="metric-card">
             <div className="section-title">Before you start</div>
-            <ul className="list">
-              <li>Mic permission is required before the session begins.</li>
-              <li>The avatar starts in the same tab, not a popup window.</li>
-              <li>Once the room begins, document uploads are locked until the session ends.</li>
-            </ul>
+            <p className="muted-copy">
+              Mic permission is required before the session begins. The avatar
+              starts in the same tab, not a popup window, and uploads stay
+              locked while the session is live.
+            </p>
             <div className="agent-actions" style={{ marginTop: 18 }}>
               <button
                 type="button"
@@ -299,31 +288,47 @@ export function AgentDetailPage({ slug }) {
             </div>
           </div>
 
-          {(justEnded || agentState.session.lastEndedAt) && (
-            <div className="metric-card">
-              <div className="section-title">Post-call review</div>
-              <p className="muted-copy">
-                Last ended {agentState.session.lastEndedAt || "just now"} with a
-                sample duration of {agentState.session.lastDurationLabel}.
-              </p>
-              <div className="section-title" style={{ marginTop: 18 }}>
-                Rate the conversation
-              </div>
-              <div className="rating-row">
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={`rating-star ${rating >= value ? "active" : ""}`}
-                    onClick={() => setRating(value)}
-                    aria-label={`Rate ${value} star${value > 1 ? "s" : ""}`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
+          <div className="metric-card">
+            <div className="section-title">
+              Past sessions{justEnded ? " • updated" : ""}
             </div>
-          )}
+            <div className="sidebar-stack">
+              {pastSessions.length ? (
+                pastSessions.map((session) => (
+                  <Link
+                    href={`/agents/${slug}/sessions/${session.id}`}
+                    className="session-list-item"
+                    key={session.id}
+                  >
+                    <div className="session-list-top">
+                      <strong>{new Date(session.endedAt).toLocaleString()}</strong>
+                      <span className="pill">{session.durationLabel}</span>
+                    </div>
+                    <p className="muted-copy" style={{ margin: "8px 0 0" }}>
+                      {session.upload?.fileName || "No supporting file"}
+                    </p>
+                    <div style={{ marginTop: 10 }}>
+                      {session.evaluation?.status === "processing" ? (
+                        <div className="status-chip status-warning">
+                          <span className="status-dot" />
+                          Evaluation processing...
+                        </div>
+                      ) : (
+                        <div className="status-chip status-success">
+                          <span className="status-dot" />
+                          Evaluation ready
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <div className="empty-state">
+                  No saved sessions yet. End a session and it will appear here.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </AppShell>

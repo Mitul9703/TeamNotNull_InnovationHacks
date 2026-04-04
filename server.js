@@ -7,6 +7,7 @@ import next from "next";
 import { createRequire } from "node:module";
 import { WebSocketServer } from "ws";
 import { GoogleGenAI, Modality } from "@google/genai";
+import { AssemblyAI } from "assemblyai";
 
 const require = createRequire(import.meta.url);
 const { PDFParse } = require("pdf-parse");
@@ -33,8 +34,12 @@ function registerLiveBridge(server) {
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
     });
+    const assembly = process.env.ASSEMBLYAI_API_KEY
+      ? new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY })
+      : null;
 
     let session = null;
+    let assemblyTranscriber = null;
     let conversationHistory = [];
     let liveConnected = false;
 
@@ -117,7 +122,6 @@ ${extraContext}
                 }),
               );
             }
-
             const modelTurn = serverContent?.modelTurn;
             const parts = modelTurn?.parts || [];
 
@@ -156,7 +160,7 @@ ${extraContext}
             liveConnected = false;
             clientSocket.send(
               JSON.stringify({
-                type: "status",
+                type: "live_closed",
                 message: `Gemini Live disconnected${event?.reason ? `: ${event.reason}` : ""}`,
               }),
             );
@@ -165,8 +169,49 @@ ${extraContext}
       });
     }
 
+    async function connectAssembly() {
+      if (!assembly) return;
+
+      assemblyTranscriber = assembly.streaming.transcriber({
+        sampleRate: 16_000,
+        speechModel: "universal-streaming-english",
+        formatTurns: true,
+        languageDetection: false,
+        minTurnSilence: 700,
+      });
+
+      assemblyTranscriber.on("turn", (turn) => {
+        if (!turn?.transcript) {
+          return;
+        }
+
+        clientSocket.send(
+          JSON.stringify({
+            type: "user_transcription",
+            text: turn.transcript,
+            finished: !!turn.end_of_turn,
+          }),
+        );
+      });
+
+      assemblyTranscriber.on("error", (error) => {
+        console.error("AssemblyAI streaming error:", error);
+        clientSocket.send(
+          JSON.stringify({
+            type: "status",
+            message: "User transcription is temporarily unavailable.",
+          }),
+        );
+      });
+
+      assemblyTranscriber.on("close", (_code, _reason) => {});
+
+      await assemblyTranscriber.connect();
+    }
+
     try {
       await connectLive();
+      await connectAssembly();
     } catch (error) {
       console.error("Failed to open Gemini Live session:", error);
       clientSocket.send(
@@ -199,7 +244,7 @@ ${extraContext}
           if (!liveConnected || !session) {
             clientSocket.send(
               JSON.stringify({
-                type: "error",
+                type: "status",
                 message: "Gemini Live session is not connected",
               }),
             );
@@ -210,13 +255,16 @@ ${extraContext}
         }
 
         if (msg.type === "user_audio") {
+          if (assemblyTranscriber) {
+            try {
+              const pcmBytes = Buffer.from(msg.data, "base64");
+              assemblyTranscriber.sendAudio(pcmBytes);
+            } catch (error) {
+              console.error("AssemblyAI audio forwarding error:", error);
+            }
+          }
+
           if (!liveConnected || !session) {
-            clientSocket.send(
-              JSON.stringify({
-                type: "error",
-                message: "Gemini Live session is not connected",
-              }),
-            );
             return;
           }
 
@@ -264,6 +312,9 @@ ${extraContext}
     clientSocket.on("close", async () => {
       try {
         await session?.close();
+      } catch (_error) {}
+      try {
+        await assemblyTranscriber?.close();
       } catch (_error) {}
     });
   });
