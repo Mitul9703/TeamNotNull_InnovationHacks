@@ -215,6 +215,7 @@ export function SessionPage({ slug }) {
   const audioRef = useRef(null);
   const screenPreviewRef = useRef(null);
   const simliClientRef = useRef(null);
+  const pipWindowRef = useRef(null);
   const browserSocketRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
@@ -236,6 +237,7 @@ export function SessionPage({ slug }) {
   const screenCaptureCanvasRef = useRef(null);
   const lastSentCodeRef = useRef("");
   const avatarProfileRef = useRef(null);
+  const mutedStateRef = useRef(false);
   const transcriptEntries = [
     ...transcript,
     ...(userBuffer.trim()
@@ -280,6 +282,7 @@ export function SessionPage({ slug }) {
 
   useEffect(() => {
     mutedRef.current = agentState?.session?.muted || false;
+    mutedStateRef.current = agentState?.session?.muted || false;
   }, [agentState?.session?.muted]);
 
   useEffect(() => {
@@ -376,6 +379,221 @@ export function SessionPage({ slug }) {
     if (!element) return;
     element.scrollTop = element.scrollHeight;
   }, [transcriptEntries]);
+
+  async function closePipWindow() {
+    const pipWindow = pipWindowRef.current;
+    if (!pipWindow || pipWindow.closed) {
+      pipWindowRef.current = null;
+      return;
+    }
+
+    try {
+      pipWindow.close();
+    } catch (_error) {}
+
+    pipWindowRef.current = null;
+  }
+
+  async function openPipWindow() {
+    if (
+      !isInvestorAgent ||
+      screenShareState.status !== "active" ||
+      sessionPhase !== "live" ||
+      typeof window === "undefined" ||
+      !("documentPictureInPicture" in window)
+    ) {
+      return;
+    }
+
+    if (pipWindowRef.current && !pipWindowRef.current.closed) {
+      return;
+    }
+
+    try {
+      const pipWindow = await window.documentPictureInPicture.requestWindow({
+        width: 360,
+        height: 420,
+      });
+
+      pipWindowRef.current = pipWindow;
+      const pipDocument = pipWindow.document;
+      pipDocument.body.innerHTML = "";
+      pipDocument.title = "PitchMirror Demo Controls";
+
+      const style = pipDocument.createElement("style");
+      style.textContent = `
+        :root {
+          color-scheme: dark;
+          font-family: "Google Sans Text", "Google Sans", "Segoe UI", sans-serif;
+        }
+        body {
+          margin: 0;
+          background:
+            radial-gradient(circle at top left, rgba(66, 133, 244, 0.18), transparent 36%),
+            radial-gradient(circle at bottom right, rgba(52, 168, 83, 0.16), transparent 30%),
+            #08111f;
+          color: #f8fbff;
+        }
+        .pip-shell {
+          display: grid;
+          gap: 12px;
+          padding: 14px;
+          height: 100vh;
+          box-sizing: border-box;
+        }
+        .pip-video {
+          width: 100%;
+          height: 100%;
+          min-height: 250px;
+          border-radius: 18px;
+          background: #0b1220;
+          object-fit: cover;
+          border: 1px solid rgba(138, 180, 248, 0.2);
+        }
+        .pip-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .pip-title {
+          font-size: 0.98rem;
+          font-weight: 600;
+        }
+        .pip-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          border-radius: 999px;
+          padding: 7px 11px;
+          background: rgba(255, 255, 255, 0.08);
+          color: #b5c1d6;
+          font-size: 0.8rem;
+        }
+        .pip-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #34a853;
+        }
+        .pip-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        button {
+          min-height: 42px;
+          border: 0;
+          border-radius: 14px;
+          color: #fff;
+          cursor: pointer;
+          font: inherit;
+        }
+        .pip-mute {
+          background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+        }
+        .pip-stop {
+          background: linear-gradient(180deg, #ef6a5f 0%, #ea4335 100%);
+        }
+      `;
+      pipDocument.head.appendChild(style);
+
+      const shell = pipDocument.createElement("div");
+      shell.className = "pip-shell";
+
+      const row = pipDocument.createElement("div");
+      row.className = "pip-row";
+
+      const title = pipDocument.createElement("div");
+      title.className = "pip-title";
+      title.textContent = agent.name;
+
+      const badge = pipDocument.createElement("div");
+      badge.className = "pip-badge";
+      badge.innerHTML = `<span class="pip-dot"></span>${getScreenShareStatusLabel()}`;
+
+      row.appendChild(title);
+      row.appendChild(badge);
+
+      const pipVideo = pipDocument.createElement("video");
+      pipVideo.className = "pip-video";
+      pipVideo.autoplay = true;
+      pipVideo.playsInline = true;
+      pipVideo.muted = true;
+
+      if (videoRef.current?.captureStream) {
+        try {
+          pipVideo.srcObject = videoRef.current.captureStream();
+        } catch (_error) {}
+      }
+
+      const actions = pipDocument.createElement("div");
+      actions.className = "pip-actions";
+
+      const muteButton = pipDocument.createElement("button");
+      muteButton.className = "pip-mute";
+      muteButton.textContent = mutedStateRef.current ? "Unmute" : "Mute";
+      muteButton.addEventListener("click", () => {
+        toggleMute();
+        muteButton.textContent = mutedStateRef.current ? "Unmute" : "Mute";
+      });
+
+      const stopButton = pipDocument.createElement("button");
+      stopButton.className = "pip-stop";
+      stopButton.textContent = "Stop sharing";
+      stopButton.addEventListener("click", () => {
+        void stopScreenShare();
+      });
+
+      actions.appendChild(muteButton);
+      actions.appendChild(stopButton);
+
+      shell.appendChild(row);
+      shell.appendChild(pipVideo);
+      shell.appendChild(actions);
+      pipDocument.body.appendChild(shell);
+
+      pipWindow.addEventListener("pagehide", () => {
+        pipWindowRef.current = null;
+      }, { once: true });
+    } catch (_error) {
+      pipWindowRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    if (!isInvestorAgent) return undefined;
+
+    const syncPip = () => {
+      if (document.visibilityState === "visible" || document.hasFocus()) {
+        void closePipWindow();
+        return;
+      }
+
+      if (screenShareState.status === "active" && sessionPhase === "live") {
+        void openPipWindow();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      syncPip();
+    };
+
+    const handleFocus = () => {
+      void closePipWindow();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    syncPip();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      void closePipWindow();
+    };
+  }, [isInvestorAgent, screenShareState.status, sessionPhase]);
 
   useEffect(() => {
     const preview = screenPreviewRef.current;
@@ -551,6 +769,8 @@ export function SessionPage({ slug }) {
   }
 
   async function stopScreenShare() {
+    await closePipWindow();
+
     if (screenFrameTimerRef.current) {
       window.clearInterval(screenFrameTimerRef.current);
       screenFrameTimerRef.current = null;
@@ -944,6 +1164,8 @@ export function SessionPage({ slug }) {
         screenStreamRef.current = null;
       }
 
+      await closePipWindow();
+
       if (screenPreviewRef.current) {
         screenPreviewRef.current.srcObject = null;
       }
@@ -1064,6 +1286,7 @@ export function SessionPage({ slug }) {
 
   function toggleMute() {
     mutedRef.current = !mutedRef.current;
+    mutedStateRef.current = mutedRef.current;
     patchAgent(slug, (current) => ({
       ...current,
       session: {
