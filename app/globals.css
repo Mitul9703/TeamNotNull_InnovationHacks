@@ -907,6 +907,7 @@ button {
   font-family: var(--font-mono);
   font-size: 0.96rem;
   line-height: 1.7;
+  tab-size: 2;
 }
 
 [data-theme="light"] .code-editor {

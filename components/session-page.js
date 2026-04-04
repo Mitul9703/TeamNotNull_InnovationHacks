@@ -190,6 +190,7 @@ export function SessionPage({ slug }) {
   const codeSyncTimerRef = useRef(null);
   const lastSentCodeRef = useRef("");
   const avatarProfileRef = useRef(null);
+  const codeEditorRef = useRef(null);
   const transcriptEntries = [
     ...transcript,
     ...(userBuffer.trim()
@@ -230,6 +231,90 @@ export function SessionPage({ slug }) {
     flushUserTranscript(finalText);
     setUserBuffer("");
     userBufferRef.current = "";
+  }
+
+  function handleCodeEditorKeyDown(event) {
+    if (!isCodingAgent || event.key !== "Tab") {
+      return;
+    }
+
+    event.preventDefault();
+
+    const textarea = codeEditorRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const indent = "  ";
+    const value = codeDraft;
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    const hasSelection = selectionStart !== selectionEnd;
+    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+
+    if (event.shiftKey) {
+      const selectedText = value.slice(lineStart, selectionEnd);
+      const lines = selectedText.split("\n");
+      let removedCount = 0;
+      const updatedLines = lines.map((line) => {
+        if (line.startsWith(indent)) {
+          removedCount += indent.length;
+          return line.slice(indent.length);
+        }
+        if (line.startsWith("\t")) {
+          removedCount += 1;
+          return line.slice(1);
+        }
+        return line;
+      });
+
+      const nextValue =
+        value.slice(0, lineStart) +
+        updatedLines.join("\n") +
+        value.slice(selectionEnd);
+
+      setCodeDraft(nextValue);
+
+      window.requestAnimationFrame(() => {
+        const nextStart = hasSelection
+          ? lineStart
+          : Math.max(lineStart, selectionStart - indent.length);
+        const nextEnd = Math.max(nextStart, selectionEnd - removedCount);
+        textarea.selectionStart = nextStart;
+        textarea.selectionEnd = nextEnd;
+      });
+      return;
+    }
+
+    if (hasSelection) {
+      const selectedText = value.slice(lineStart, selectionEnd);
+      const lines = selectedText.split("\n");
+      const nextBlock = lines.map((line) => `${indent}${line}`).join("\n");
+      const nextValue =
+        value.slice(0, lineStart) +
+        nextBlock +
+        value.slice(selectionEnd);
+
+      setCodeDraft(nextValue);
+
+      window.requestAnimationFrame(() => {
+        textarea.selectionStart = lineStart + indent.length;
+        textarea.selectionEnd = selectionEnd + indent.length * lines.length;
+      });
+      return;
+    }
+
+    const nextValue =
+      value.slice(0, selectionStart) +
+      indent +
+      value.slice(selectionEnd);
+    setCodeDraft(nextValue);
+
+    window.requestAnimationFrame(() => {
+      const nextPosition = selectionStart + indent.length;
+      textarea.selectionStart = nextPosition;
+      textarea.selectionEnd = nextPosition;
+    });
   }
 
   useEffect(() => {
@@ -926,10 +1011,12 @@ export function SessionPage({ slug }) {
                   </select>
                 </div>
                 <textarea
+                  ref={codeEditorRef}
                   className="code-editor"
                   spellCheck={false}
                   value={codeDraft}
                   onChange={(event) => setCodeDraft(event.target.value)}
+                  onKeyDown={handleCodeEditorKeyDown}
                   placeholder="Write interview code here while explaining your thought process aloud."
                 />
               </div>
