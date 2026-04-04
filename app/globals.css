@@ -412,6 +412,18 @@ button {
   padding: 16px;
 }
 
+.context-textarea {
+  width: 100%;
+  min-height: 140px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  padding: 16px;
+  resize: vertical;
+  line-height: 1.65;
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;

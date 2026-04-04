@@ -111,6 +111,41 @@ function formatDuration(totalSeconds) {
   return `${minutes}:${seconds}`;
 }
 
+function pickRandomFaceId() {
+  const faceProfiles = [
+    {
+      faceId: "cace3ef7-a4c4-425d-a8cf-a5358eb0c427",
+      voiceName: "Aoede",
+    },
+    {
+      faceId: "b9e5fba3-071a-4e35-896e-211c4d6eaa7b",
+      voiceName: "Autonoe",
+    },
+    {
+      faceId: "d2a5c7c6-fed9-4f55-bcb3-062f7cd20103",
+      voiceName: "Despina",
+    },
+    {
+      faceId: "7e74d6e7-d559-4394-bd56-4923a3ab75ad",
+      voiceName: "Charon",
+    },
+    {
+      faceId: "804c347a-26c9-4dcf-bb49-13df4bed61e8",
+      voiceName: "Charon",
+    },
+    {
+      faceId: "afdb6a3e-3939-40aa-92df-01604c23101c",
+      voiceName: "Sulafat",
+    },
+    {
+      faceId: "dd10cb5a-d31d-4f12-b69f-6db3383c006e",
+      voiceName: "Charon",
+    },
+  ];
+
+  return faceProfiles[Math.floor(Math.random() * faceProfiles.length)];
+}
+
 export function SessionPage({ slug }) {
   const router = useRouter();
   const { state, patchAgent, createSessionRecord } = useAppState();
@@ -119,6 +154,7 @@ export function SessionPage({ slug }) {
   const upload = agentState?.upload;
   const isCodingAgent = slug === "coding";
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
+  const customContextText = agentState?.customContextText || "";
 
   const [permissionState, setPermissionState] = useState("pending");
   const [sessionPhase, setSessionPhase] = useState("preflight");
@@ -152,6 +188,7 @@ export function SessionPage({ slug }) {
   const userBufferRef = useRef("");
   const codeSyncTimerRef = useRef(null);
   const lastSentCodeRef = useRef("");
+  const avatarProfileRef = useRef(null);
   const transcriptEntries = [
     ...transcript,
     ...(userBuffer.trim()
@@ -503,7 +540,9 @@ export function SessionPage({ slug }) {
   async function startSessionFlow(mediaStream) {
     try {
       const apiKey = process.env.NEXT_PUBLIC_SIMLI_API_KEY;
-      const faceId = process.env.NEXT_PUBLIC_SIMLI_FACE_ID;
+      const avatarProfile = pickRandomFaceId();
+      const faceId = avatarProfile?.faceId;
+      avatarProfileRef.current = avatarProfile;
 
       if (!apiKey || !faceId) {
         throw new Error("Missing Simli configuration.");
@@ -566,7 +605,7 @@ export function SessionPage({ slug }) {
 
       const socketUrl = `${
         window.location.protocol === "https:" ? "wss" : "ws"
-      }://${window.location.host}/api/live?agent=${encodeURIComponent(slug)}`;
+      }://${window.location.host}/api/live?agent=${encodeURIComponent(slug)}&context=${encodeURIComponent(customContextText)}&voice=${encodeURIComponent(avatarProfile?.voiceName || "")}`;
       const socket = new WebSocket(socketUrl);
       browserSocketRef.current = socket;
       attachSocketHandlers(socket);
@@ -705,6 +744,7 @@ export function SessionPage({ slug }) {
             finalCode: codeDraft,
           }
         : null,
+      customContext: customContextText.trim(),
     });
     patchAgent(slug, (current) => ({
       ...current,

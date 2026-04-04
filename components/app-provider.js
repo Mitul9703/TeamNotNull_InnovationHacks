@@ -36,6 +36,7 @@ function buildInitialAgentState() {
         contextText: "",
         error: "",
       },
+      customContextText: "",
       session: {
         status: "idle",
         muted: false,
@@ -96,6 +97,7 @@ function sanitizeState(state) {
       upload: {
         ...initial[agent.slug].upload,
       },
+      customContextText: typeof saved.customContextText === "string" ? saved.customContextText : "",
       session: {
         ...initial[agent.slug].session,
         ...saved.session,
@@ -417,6 +419,7 @@ export function AppProvider({ children }) {
             transcript: session.transcript || [],
             upload: session.upload || null,
             coding: session.coding || null,
+            customContext: session.customContext || "",
           }),
           signal: abortController.signal,
         });

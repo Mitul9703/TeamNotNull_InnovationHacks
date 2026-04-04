@@ -103,6 +103,14 @@ export function SessionDetailPage({ slug, sessionId }) {
                 </p>
               </div>
             ) : null}
+            {session.customContext ? (
+              <div className="subtle-card" style={{ marginTop: 16 }}>
+                <div className="section-title">Extra session context</div>
+                <p className="muted-copy" style={{ marginBottom: 0 }}>
+                  {session.customContext}
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className="metric-card">

@@ -374,6 +374,8 @@ function registerLiveBridge(server) {
     console.log("Browser connected to /api/live");
     const requestUrl = new URL(request?.url || "/api/live", `http://${hostname}:${port}`);
     const agentSlug = requestUrl.searchParams.get("agent") || "recruiter";
+    const customContext = (requestUrl.searchParams.get("context") || "").trim();
+    const voiceName = (requestUrl.searchParams.get("voice") || "").trim();
     const agentConfig = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
 
     const ai = new GoogleGenAI({
@@ -417,14 +419,37 @@ Rules for grounded usage:
 - If the user asks about the uploaded file, rely on this grounded context.
 `
         : "";
+      const customTextContext = customContext
+        ? `
+
+Additional user-provided context for this session:
+${customContext}
+
+Rules for using this context:
+- Treat it as an explicit user brief for this room.
+- Use it actively when framing questions and follow-ups.
+- Do not invent details beyond what the user provided.
+`
+        : "";
 
       session = await ai.live.connect({
         model: "gemini-2.5-flash-native-audio-preview-12-2025",
         config: {
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {},
+          speechConfig: voiceName
+            ? {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName,
+                  },
+                },
+              }
+            : undefined,
           systemInstruction: `
 ${agentConfig.systemPrompt}
+
+${customTextContext}
 
 ${codingQuestionContext}
 
@@ -794,6 +819,7 @@ ${rawText}`,
         transcript,
         upload,
         coding,
+        customContext,
         durationLabel,
         startedAt,
         endedAt,
@@ -819,6 +845,9 @@ ${rawText}`,
         ? upload.contextText.trim()
         : "No uploaded file context was provided for this session.";
       const codingContext = buildCodingContext(coding);
+      const userContext = customContext?.trim()
+        ? customContext.trim()
+        : "No additional text context was provided for this session.";
 
       const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
@@ -849,6 +878,9 @@ Instructions:
 
 Uploaded file context:
 ${uploadContext}
+
+Additional user-provided context:
+${userContext}
 
 ${codingContext ? `${codingContext}\n\n` : ""}Complete labeled transcript:
 ${transcriptText}

@@ -17,6 +17,8 @@ export default [
       { "label": "Clarity", "value": "84" },
       { "label": "Rigor", "value": "76" }
     ],
+    "contextFieldLabel": "Optional academic context",
+    "contextFieldDescription": "Add thesis background, class goals, grading criteria, research scope, or any reviewer expectations you want the professor to use.",
     "evaluationCriteria": [
       { "label": "Conceptual clarity", "description": "How clearly the speaker explains the core idea, framing, and conclusions in plain, structured language." },
       { "label": "Evidence and rigor", "description": "How well claims are supported with grounded evidence, methodology, or defensible reasoning." },
@@ -56,6 +58,8 @@ export default [
       { "label": "Impact", "value": "88" },
       { "label": "Role fit", "value": "81" }
     ],
+    "contextFieldLabel": "Optional role context",
+    "contextFieldDescription": "Paste job description details, target company notes, recruiter priorities, seniority expectations, or team context to tune the interview.",
     "evaluationCriteria": [
       { "label": "Communication clarity", "description": "How clearly and concisely the speaker communicates experiences, decisions, and outcomes." },
       { "label": "Impact storytelling", "description": "How well the speaker turns examples into concrete, memorable stories with outcomes and evidence." },
@@ -95,6 +99,8 @@ export default [
       { "label": "Conviction", "value": "85" },
       { "label": "Traction", "value": "79" }
     ],
+    "contextFieldLabel": "Optional investor context",
+    "contextFieldDescription": "Add fund thesis notes, investor concerns, target stage, market assumptions, or traction details you want the investor to pressure-test.",
     "evaluationCriteria": [
       { "label": "Problem and market clarity", "description": "How clearly the speaker explains the pain point, target customer, and market opportunity." },
       { "label": "Traction and evidence", "description": "How well the speaker supports the pitch with real signals, metrics, or grounded proof points." },
@@ -134,6 +140,8 @@ export default [
       { "label": "Reasoning", "value": "83" },
       { "label": "Code clarity", "value": "79" }
     ],
+    "contextFieldLabel": "Optional interview context",
+    "contextFieldDescription": "Add role stack, interview focus areas, company expectations, or topics you want the technical interviewer to emphasize while asking the problem.",
     "evaluationCriteria": [
       { "label": "Problem understanding", "description": "How well the speaker identifies the task, clarifies assumptions, and frames the solution before coding." },
       { "label": "Algorithmic reasoning", "description": "How clearly the speaker explains the chosen approach, tradeoffs, and complexity while solving the problem." },
@@ -202,6 +210,8 @@ export default [
       { "label": "Adaptability", "value": "82" },
       { "label": "Delivery", "value": "80" }
     ],
+    "contextFieldLabel": "Optional audience context",
+    "contextFieldDescription": "Add audience expectations, meeting goals, presentation style notes, or any scenario details you want this flexible agent to use.",
     "evaluationCriteria": [
       { "label": "Clarity", "description": "How clearly the speaker explains the topic, key points, and takeaways." },
       { "label": "Specificity", "description": "How grounded the answers are in concrete examples, evidence, or details." },

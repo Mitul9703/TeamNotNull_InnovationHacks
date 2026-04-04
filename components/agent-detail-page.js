@@ -204,6 +204,29 @@ export function AgentDetailPage({ slug }) {
           </div>
 
           <div className="upload-card">
+            <div className="section-title">{agent.contextFieldLabel || "Optional context"}</div>
+            <p className="muted-copy">
+              {agent.contextFieldDescription || "Add any extra context you want this agent to use."}
+            </p>
+            <label className="label" htmlFor="agent-context">
+              Optional text context
+            </label>
+            <textarea
+              id="agent-context"
+              className="context-textarea"
+              value={agentState.customContextText || ""}
+              onChange={(event) =>
+                patchAgent(slug, (current) => ({
+                  ...current,
+                  customContextText: event.target.value,
+                }))
+              }
+              placeholder="Paste role notes, scenario details, priorities, or any custom instructions for this room."
+              disabled={agentState.session.status === "active" || agentState.session.status === "starting"}
+            />
+          </div>
+
+          <div className="upload-card">
             <div className="section-title">Supporting document</div>
             <p className="muted-copy">
               Upload a PDF deck or supporting brief and it will process
