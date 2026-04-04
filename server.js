@@ -24,8 +24,6 @@ const nextApp = next({ dev, hostname, port });
 const handle = nextApp.getRequestHandler();
 const upload = multer({ dest: "uploads/" });
 
-let uploadedContextText = "";
-let uploadedFileName = "";
 let codingQuestionIndex = 0;
 
 const evaluationResponseSchema = {
@@ -464,7 +462,6 @@ function registerLiveBridge(server) {
     console.log("Browser connected to /api/live");
     const requestUrl = new URL(request?.url || "/api/live", `http://${hostname}:${port}`);
     const agentSlug = requestUrl.searchParams.get("agent") || "recruiter";
-    const customContext = (requestUrl.searchParams.get("context") || "").trim();
     const voiceName = (requestUrl.searchParams.get("voice") || "").trim();
     const agentConfig = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
 
@@ -481,6 +478,10 @@ function registerLiveBridge(server) {
     let liveConnected = false;
     let kickoffSent = false;
     let kickoffTimer = null;
+    let sessionBootstrapped = false;
+    let sessionCustomContext = "";
+    let sessionUploadContextText = "";
+    let sessionUploadFileName = "";
 
     function sendKickoff(text) {
       const kickoffText = (text || "").trim();
@@ -501,7 +502,7 @@ function registerLiveBridge(server) {
     }
 
     async function connectLive() {
-      const hasCustomCodingPrompt = agentSlug === "coding" && !!customContext;
+      const hasCustomCodingPrompt = agentSlug === "coding" && !!sessionCustomContext;
       const selectedCodingQuestion =
         agentSlug === "coding" && !hasCustomCodingPrompt
           ? selectCodingQuestion(agentConfig)
@@ -520,11 +521,11 @@ Important:
 - Keep the interview anchored to this question for the rest of the session.
 `
         : "";
-      const extraContext = uploadedContextText
+      const extraContext = sessionUploadContextText
         ? `
 
-Additional grounded document context from the uploaded file "${uploadedFileName}":
-${uploadedContextText}
+Additional grounded document context from the uploaded file "${sessionUploadFileName || "uploaded file"}":
+${sessionUploadContextText}
 
 Rules for grounded usage:
 - Use this document context actively when relevant.
@@ -532,11 +533,11 @@ Rules for grounded usage:
 - If the user asks about the uploaded file, rely on this grounded context.
 `
         : "";
-      const customTextContext = customContext
+      const customTextContext = sessionCustomContext
         ? `
 
 Additional user-provided context for this session:
-${customContext}
+${sessionCustomContext}
 
 Rules for using this context:
 - Treat it as an explicit user brief for this room.
@@ -682,30 +683,41 @@ ${extraContext}
       await assemblyTranscriber.connect();
     }
 
-    try {
-      await connectLive();
-      await connectAssembly();
-      kickoffTimer = setTimeout(() => {
-        sendKickoff(
-          agentConfig.sessionKickoff ||
-            `Begin this ${agentConfig.name} rehearsal with a short greeting, quick introduction, and the first question.`,
-        );
-      }, 700);
-    } catch (error) {
-      console.error("Failed to open Gemini Live session:", error);
-      clientSocket.send(
-        JSON.stringify({
-          type: "error",
-          message: error.message || "Failed to start Gemini Live session",
-        }),
-      );
-      clientSocket.close();
-      return;
-    }
-
     clientSocket.on("message", async (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
+
+        if (msg.type === "session_context") {
+          if (sessionBootstrapped) {
+            return;
+          }
+
+          sessionBootstrapped = true;
+          sessionCustomContext = (msg.customContext || "").trim();
+          sessionUploadContextText = (msg.upload?.contextText || "").trim();
+          sessionUploadFileName = (msg.upload?.fileName || "").trim();
+
+          try {
+            await connectLive();
+            await connectAssembly();
+            kickoffTimer = setTimeout(() => {
+              sendKickoff(
+                agentConfig.sessionKickoff ||
+                  `Begin this ${agentConfig.name} rehearsal with a short greeting, quick introduction, and the first question.`,
+              );
+            }, 700);
+          } catch (error) {
+            console.error("Failed to open Gemini Live session:", error);
+            clientSocket.send(
+              JSON.stringify({
+                type: "error",
+                message: error.message || "Failed to start Gemini Live session",
+              }),
+            );
+            clientSocket.close();
+          }
+          return;
+        }
 
         if (msg.type === "user_text") {
           const text = (msg.text || "").trim();
@@ -847,7 +859,7 @@ async function startServer() {
   app.use(express.json());
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, hasDeck: !!uploadedContextText });
+    res.json({ ok: true, hasDeck: false });
   });
 
   app.post("/api/upload-deck", upload.single("deck"), async (req, res) => {
@@ -894,8 +906,8 @@ Parsed PDF text:
 ${rawText}`,
       });
 
-      uploadedContextText = (prepResponse.text || "").trim();
-      uploadedFileName = req.file.originalname;
+      const uploadedContextText = (prepResponse.text || "").trim();
+      const uploadedFileName = req.file.originalname;
 
       if (!uploadedContextText) {
         return res.status(500).json({ error: "Failed to create grounded context." });

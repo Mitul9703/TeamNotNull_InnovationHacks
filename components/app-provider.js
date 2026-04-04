@@ -66,7 +66,6 @@ function buildPersistedAgents(agents) {
   return AGENTS.reduce((acc, agent) => {
     const current = agents?.[agent.slug] || initial[agent.slug];
     acc[agent.slug] = {
-      sessionName: current.sessionName || "",
       session: {
         status: "idle",
         muted: false,
@@ -109,8 +108,6 @@ function sanitizeState(state) {
       upload: {
         ...initial[agent.slug].upload,
       },
-      sessionName: typeof saved.sessionName === "string" ? saved.sessionName : "",
-      customContextText: typeof saved.customContextText === "string" ? saved.customContextText : "",
       session: {
         ...initial[agent.slug].session,
         ...saved.session,

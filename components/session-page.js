@@ -455,6 +455,18 @@ export function SessionPage({ slug }) {
   function attachSocketHandlers(socket) {
     socket.onopen = () => {
       setStatusText("Connected to the live question bridge.");
+      socket.send(
+        JSON.stringify({
+          type: "session_context",
+          customContext: customContextText,
+          upload: upload?.contextText
+            ? {
+                fileName: upload.fileName || "",
+                contextText: upload.contextText,
+              }
+            : null,
+        }),
+      );
       socket.send(JSON.stringify({ type: "get_history" }));
       if (isCodingAgent && codeDraft.trim()) {
         socket.send(
@@ -646,7 +658,7 @@ export function SessionPage({ slug }) {
 
       await simliClient.start();
 
-      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&context=${encodeURIComponent(customContextText)}&voice=${encodeURIComponent(avatarProfile?.voiceName || "")}`;
+      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&voice=${encodeURIComponent(avatarProfile?.voiceName || "")}`;
       const socket = new WebSocket(socketUrl);
       browserSocketRef.current = socket;
       attachSocketHandlers(socket);
