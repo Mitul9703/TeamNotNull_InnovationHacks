@@ -120,6 +120,12 @@ function sanitizeState(state) {
         status: "processing",
         startedAt: new Date().toISOString(),
       },
+      resources: session.resources || {
+        status: "idle",
+        briefs: [],
+        topics: [],
+        error: "",
+      },
     }));
   }
 
@@ -141,6 +147,7 @@ export function AppProvider({ children }) {
   const [mounted, setMounted] = useState(false);
   const [toasts, setToasts] = useState([]);
   const evaluationJobsRef = useRef(new Map());
+  const resourceJobsRef = useRef(new Map());
 
   const dismissToast = useCallback((id) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -196,15 +203,103 @@ export function AppProvider({ children }) {
     }));
   }, []);
 
-  const runEvaluationJob = useCallback(
+  const runResourceJob = useCallback(
     async (session) => {
-      const timerKey = `${session.agentSlug}:${session.id}`;
-      if (evaluationJobsRef.current.has(timerKey)) {
+      const jobKey = `${session.agentSlug}:${session.id}`;
+      if (resourceJobsRef.current.has(jobKey)) {
+        return;
+      }
+
+      const briefs = session.resources?.briefs || [];
+      if (!briefs.length) {
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
+          resources: {
+            ...currentSession.resources,
+            status: "completed",
+            completedAt: new Date().toISOString(),
+            error: "",
+          },
+        }));
         return;
       }
 
       const abortController = new AbortController();
-      evaluationJobsRef.current.set(timerKey, abortController);
+      resourceJobsRef.current.set(jobKey, abortController);
+
+      patchSession(session.agentSlug, session.id, (currentSession) => ({
+        ...currentSession,
+        resources: {
+          ...currentSession.resources,
+          status: "processing",
+          startedAt:
+            currentSession.resources?.startedAt || new Date().toISOString(),
+          error: "",
+        },
+      }));
+
+      try {
+        const response = await fetch("/api/session-resources", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentSlug: session.agentSlug,
+            sessionId: session.id,
+            resourceBriefs: briefs,
+          }),
+          signal: abortController.signal,
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to fetch resources.");
+        }
+
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
+          resources: {
+            ...currentSession.resources,
+            status: "completed",
+            completedAt: new Date().toISOString(),
+            topics: payload.topics || [],
+            error: "",
+          },
+        }));
+
+        pushToast(`${session.agentName || "Session"} resources are ready.`);
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        patchSession(session.agentSlug, session.id, (currentSession) => ({
+          ...currentSession,
+          resources: {
+            ...currentSession.resources,
+            status: "failed",
+            failedAt: new Date().toISOString(),
+            error: error.message || "Resource search failed.",
+          },
+        }));
+      } finally {
+        resourceJobsRef.current.delete(jobKey);
+      }
+    },
+    [patchSession, pushToast],
+  );
+
+  const runEvaluationJob = useCallback(
+    async (session) => {
+      const jobKey = `${session.agentSlug}:${session.id}`;
+      if (evaluationJobsRef.current.has(jobKey)) {
+        return;
+      }
+
+      const abortController = new AbortController();
+      evaluationJobsRef.current.set(jobKey, abortController);
 
       patchSession(session.agentSlug, session.id, (currentSession) => ({
         ...currentSession,
@@ -255,9 +350,29 @@ export function AppProvider({ children }) {
             result: payload.evaluation,
             error: "",
           },
+          resources: {
+            status: payload.evaluation.resourceBriefs?.length ? "processing" : "completed",
+            startedAt: payload.evaluation.resourceBriefs?.length
+              ? new Date().toISOString()
+              : currentSession.resources?.startedAt || "",
+            completedAt: payload.evaluation.resourceBriefs?.length ? "" : new Date().toISOString(),
+            briefs: payload.evaluation.resourceBriefs || [],
+            topics: [],
+            error: "",
+          },
         }));
 
         pushToast(`${session.agentName || "Session"} evaluation is ready.`);
+        if (payload.evaluation.resourceBriefs?.length) {
+          void runResourceJob({
+            agentSlug: session.agentSlug,
+            id: session.id,
+            agentName: session.agentName,
+            resources: {
+              briefs: payload.evaluation.resourceBriefs,
+            },
+          });
+        }
       } catch (error) {
         if (abortController.signal.aborted) {
           return;
@@ -277,10 +392,10 @@ export function AppProvider({ children }) {
           `${session.agentName || "Session"} evaluation could not be completed.`,
         );
       } finally {
-        evaluationJobsRef.current.delete(timerKey);
+        evaluationJobsRef.current.delete(jobKey);
       }
     },
-    [patchSession, pushToast],
+    [patchSession, pushToast, runResourceJob],
   );
 
   useEffect(() => {
@@ -308,10 +423,30 @@ export function AppProvider({ children }) {
       (state.sessions[agent.slug] || []).forEach((session) => {
         if (session.evaluation?.status === "processing") {
           void runEvaluationJob(session);
+          return;
+        }
+
+        if (
+          session.evaluation?.status === "completed" &&
+          session.resources?.status === "idle" &&
+          session.evaluation?.result?.resourceBriefs?.length
+        ) {
+          void runResourceJob({
+            ...session,
+            resources: {
+              ...session.resources,
+              briefs: session.evaluation.result.resourceBriefs,
+            },
+          });
+          return;
+        }
+
+        if (session.resources?.status === "processing") {
+          void runResourceJob(session);
         }
       });
     });
-  }, [mounted, runEvaluationJob, state.sessions]);
+  }, [mounted, runEvaluationJob, runResourceJob, state.sessions]);
 
   useEffect(() => {
     return () => {
@@ -319,6 +454,10 @@ export function AppProvider({ children }) {
         controller.abort();
       }
       evaluationJobsRef.current.clear();
+      for (const controller of resourceJobsRef.current.values()) {
+        controller.abort();
+      }
+      resourceJobsRef.current.clear();
     };
   }, []);
 
@@ -330,6 +469,12 @@ export function AppProvider({ children }) {
         evaluation: {
           status: "processing",
           startedAt,
+          error: "",
+        },
+        resources: {
+          status: "idle",
+          briefs: [],
+          topics: [],
           error: "",
         },
       };

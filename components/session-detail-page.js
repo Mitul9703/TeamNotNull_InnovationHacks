@@ -5,6 +5,14 @@ import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
+function domainLabel(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch (_error) {
+    return url;
+  }
+}
+
 export function SessionDetailPage({ slug, sessionId }) {
   const { state } = useAppState();
   const agent = AGENT_LOOKUP[slug];
@@ -21,6 +29,7 @@ export function SessionDetailPage({ slug, sessionId }) {
   }
 
   const evaluation = session.evaluation;
+  const resources = session.resources || { status: "idle", topics: [], briefs: [] };
 
   return (
     <AppShell>
@@ -157,6 +166,94 @@ export function SessionDetailPage({ slug, sessionId }) {
                 ) : null}
               </>
             )}
+          </div>
+
+          <div className="metric-card">
+            <div className="section-title">Improvement resources</div>
+            {resources.status === "idle" ? (
+              <div className="subtle-card">
+                <p className="muted-copy" style={{ margin: 0 }}>
+                  Targeted resources will appear here after evaluation identifies the
+                  top improvement areas.
+                </p>
+              </div>
+            ) : null}
+            {resources.status === "processing" ? (
+              <div className="subtle-card">
+                <div className="status-chip status-warning">
+                  <span className="status-dot" />
+                  Finding resources...
+                </div>
+                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                  TinyFish is gathering videos, articles, and websites for the most
+                  important improvement themes from this session.
+                </p>
+              </div>
+            ) : null}
+            {resources.status === "failed" ? (
+              <div className="subtle-card">
+                <div className="status-chip status-danger">
+                  <span className="status-dot" />
+                  Resource search failed
+                </div>
+                <p className="muted-copy" style={{ marginTop: 12, marginBottom: 0 }}>
+                  {resources.error || "We finished the evaluation, but the web resource search did not complete."}
+                </p>
+              </div>
+            ) : null}
+            {resources.status === "completed" && resources.topics?.length ? (
+              <div className="resource-accordion">
+                {resources.topics.map((topic, index) => (
+                  <details
+                    className="resource-group"
+                    key={topic.id || topic.topic}
+                    open={index === 0}
+                  >
+                    <summary className="resource-summary">
+                      <div>
+                        <div className="resource-topic">{topic.topic}</div>
+                        <p className="muted-copy" style={{ margin: "6px 0 0" }}>
+                          {topic.whyThisMatters}
+                        </p>
+                      </div>
+                      <span className="pill">
+                        {topic.items?.length || 0} resources
+                      </span>
+                    </summary>
+                    <div className="resource-grid">
+                      {(topic.items || []).map((item) => (
+                        <a
+                          key={`${topic.id}-${item.url}`}
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="resource-card"
+                        >
+                          <div className="button-row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+                            <span className="resource-kind">{item.type || "resource"}</span>
+                            <span className="metric-label">{item.source || domainLabel(item.url)}</span>
+                          </div>
+                          <div className="resource-title">{item.title}</div>
+                          <p className="muted-copy" style={{ marginTop: 10, marginBottom: 12 }}>
+                            {item.reason}
+                          </p>
+                          <span className="link-button">
+                            Open {domainLabel(item.url)}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            ) : null}
+            {resources.status === "completed" && !resources.topics?.length ? (
+              <div className="subtle-card">
+                <p className="muted-copy" style={{ margin: 0 }}>
+                  No targeted resources were saved for this session.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className="metric-card">

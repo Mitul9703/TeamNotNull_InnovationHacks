@@ -28,7 +28,15 @@ let uploadedFileName = "";
 
 const evaluationResponseSchema = {
   type: Type.OBJECT,
-  required: ["score", "summary", "metrics", "strengths", "improvements", "recommendations"],
+  required: [
+    "score",
+    "summary",
+    "metrics",
+    "strengths",
+    "improvements",
+    "recommendations",
+    "resourceBriefs",
+  ],
   properties: {
     score: {
       type: Type.INTEGER,
@@ -73,6 +81,57 @@ const evaluationResponseSchema = {
       type: Type.ARRAY,
       items: {
         type: Type.STRING,
+      },
+    },
+    resourceBriefs: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        required: ["topic", "improvement", "whyThisMatters", "searchPhrases", "resourceTypes"],
+        properties: {
+          topic: {
+            type: Type.STRING,
+          },
+          improvement: {
+            type: Type.STRING,
+          },
+          whyThisMatters: {
+            type: Type.STRING,
+          },
+          searchPhrases: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.STRING,
+            },
+          },
+          resourceTypes: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.STRING,
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+const tinyFishArticlesSchema = {
+  type: Type.OBJECT,
+  required: ["resources"],
+  properties: {
+    resources: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        required: ["title", "url", "type", "source", "reason_relevant"],
+        properties: {
+          title: { type: Type.STRING },
+          url: { type: Type.STRING },
+          type: { type: Type.STRING },
+          source: { type: Type.STRING },
+          reason_relevant: { type: Type.STRING },
+        },
       },
     },
   },
@@ -124,7 +183,150 @@ function normalizeEvaluationResult(agent, rawResult) {
     recommendations: Array.isArray(rawResult.recommendations)
       ? rawResult.recommendations.filter(Boolean).slice(0, 4)
       : [],
+    resourceBriefs: Array.isArray(rawResult.resourceBriefs)
+      ? rawResult.resourceBriefs
+          .map((brief, index) => ({
+            id: brief.id || `brief-${index + 1}`,
+            topic: (brief.topic || "").trim(),
+            improvement: (brief.improvement || "").trim(),
+            whyThisMatters: (brief.whyThisMatters || "").trim(),
+            searchPhrases: Array.isArray(brief.searchPhrases)
+              ? brief.searchPhrases.filter(Boolean).slice(0, 3)
+              : [],
+            resourceTypes: Array.isArray(brief.resourceTypes)
+              ? brief.resourceTypes.filter(Boolean).slice(0, 3)
+              : [],
+          }))
+          .filter((brief) => brief.topic && brief.improvement)
+          .slice(0, 2)
+      : [],
   };
+}
+
+function buildTinyFishGoal({ brief, kind }) {
+  const phrases = (brief.searchPhrases || []).filter(Boolean).join("; ");
+  const typeHint =
+    kind === "video"
+      ? 'Set "type" to "youtube".'
+      : 'Set "type" to "article" or "website" depending on what the result is.';
+
+  return `
+Find high-quality ${kind === "video" ? "YouTube videos" : "articles and websites"} that help a user improve this communication skill.
+
+Topic: ${brief.topic}
+Improvement area: ${brief.improvement}
+Why it matters: ${brief.whyThisMatters}
+Search phrases to use: ${phrases || brief.topic}
+
+Return JSON matching this exact structure:
+{
+  "resources": [
+    {
+      "title": "string",
+      "url": "string",
+      "type": "string",
+      "source": "string",
+      "reason_relevant": "string"
+    }
+  ]
+}
+
+Rules:
+- Return exactly 2 resources.
+- Prefer practical, educational, high-signal content.
+- Avoid paywalled, spammy, or low-credibility results.
+- Avoid duplicate URLs or duplicate ideas.
+- ${typeHint}
+- "source" should be the publisher or website name.
+- "reason_relevant" should be a short sentence tailored to this improvement area.
+- Stop once you have 2 strong results.
+
+If you cannot find 2 good matches, return the best available results and keep the same JSON structure.
+  `.trim();
+}
+
+async function runTinyFish({ url, goal }) {
+  const response = await fetch("https://agent.tinyfish.ai/v1/automation/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": process.env.TINYFISH_API_KEY,
+    },
+    body: JSON.stringify({
+      url,
+      goal,
+      browser_profile: "stealth",
+      api_integration: "pitchmirror",
+      feature_flags: {
+        enable_agent_memory: false,
+      },
+    }),
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || payload?.error || "Failed to run TinyFish search.");
+  }
+
+  if (payload?.status && payload.status !== "COMPLETED") {
+    throw new Error(payload?.error?.message || "TinyFish run did not complete successfully.");
+  }
+
+  return payload?.result;
+}
+
+function parseTinyFishResources(result) {
+  if (!result) return [];
+
+  let parsed = result;
+
+  if (typeof result === "string") {
+    parsed = JSON.parse(result);
+  }
+
+  const resources = Array.isArray(parsed.resources) ? parsed.resources : [];
+
+  return resources
+    .map((resource) => ({
+      title: (resource.title || "").trim(),
+      url: (resource.url || "").trim(),
+      type: (resource.type || "").trim(),
+      source: (resource.source || "").trim(),
+      reason: (resource.reason_relevant || "").trim(),
+    }))
+    .filter((resource) => resource.title && resource.url);
+}
+
+async function fetchTinyFishResourcesForBrief(brief) {
+  const videoGoal = buildTinyFishGoal({ brief, kind: "video" });
+  const articleGoal = buildTinyFishGoal({ brief, kind: "article" });
+
+  const [videoResult, articleResult] = await Promise.all([
+    runTinyFish({
+      url: "https://www.youtube.com/results?search_query=public+speaking",
+      goal: videoGoal,
+    }),
+    runTinyFish({
+      url: "https://duckduckgo.com/",
+      goal: articleGoal,
+    }),
+  ]);
+
+  const merged = [
+    ...parseTinyFishResources(videoResult),
+    ...parseTinyFishResources(articleResult),
+  ];
+
+  const seen = new Set();
+
+  return merged.filter((resource) => {
+    if (seen.has(resource.url)) {
+      return false;
+    }
+    seen.add(resource.url);
+    return true;
+  });
 }
 
 function registerLiveBridge(server) {
@@ -535,6 +737,8 @@ Instructions:
 - Do not invent transcript details, file details, or performance claims.
 - Strengths, improvements, and recommendations should be concise, concrete, and non-redundant.
 - Keep the feedback human and useful, not robotic.
+- Return up to 2 resource briefs for the most important improvement areas.
+- Each resource brief should be distinct and should help a later web-search tool find concrete learning resources.
 
 Uploaded file context:
 ${uploadContext}
@@ -564,6 +768,50 @@ ${transcriptText}
       console.error("Session evaluation error:", error);
       return res.status(500).json({
         error: "Failed to evaluate session.",
+        details: error.message,
+      });
+    }
+  });
+
+  app.post("/api/session-resources", async (req, res) => {
+    try {
+      if (!process.env.TINYFISH_API_KEY) {
+        return res.status(400).json({
+          error: "TinyFish API key is not configured.",
+        });
+      }
+
+      const { resourceBriefs } = req.body || {};
+      const briefs = Array.isArray(resourceBriefs) ? resourceBriefs.slice(0, 2) : [];
+
+      if (!briefs.length) {
+        return res.json({
+          ok: true,
+          topics: [],
+        });
+      }
+
+      const topics = await Promise.all(
+        briefs.map(async (brief, index) => {
+          const items = await fetchTinyFishResourcesForBrief(brief);
+          return {
+            id: brief.id || `topic-${index + 1}`,
+            topic: brief.topic,
+            improvement: brief.improvement,
+            whyThisMatters: brief.whyThisMatters,
+            items: items.slice(0, 4),
+          };
+        }),
+      );
+
+      return res.json({
+        ok: true,
+        topics,
+      });
+    } catch (error) {
+      console.error("TinyFish resource error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch improvement resources.",
         details: error.message,
       });
     }
