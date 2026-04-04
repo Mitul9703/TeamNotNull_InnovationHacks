@@ -148,7 +148,7 @@ export default [
       { "label": "Code clarity", "description": "How readable, organized, and interview-ready the written solution or pseudocode is." },
       { "label": "Communication while coding", "description": "How well the speaker maintains a useful think-aloud narrative while typing and responding to follow-up questions." }
     ],
-    "codingLanguages": ["JavaScript", "Python", "Java", "C++", "Pseudocode"],
+    "codingLanguages": ["JavaScript", "Python", "Java", "C++", "SQL", "Pseudocode"],
     "codingQuestionBank": [
       {
         "title": "Two Sum",

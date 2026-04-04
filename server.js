@@ -391,8 +391,11 @@ function registerLiveBridge(server) {
     let liveConnected = false;
 
     async function connectLive() {
+      const hasCustomCodingPrompt = agentSlug === "coding" && !!customContext;
       const selectedCodingQuestion =
-        agentSlug === "coding" ? selectCodingQuestion(agentConfig) : null;
+        agentSlug === "coding" && !hasCustomCodingPrompt
+          ? selectCodingQuestion(agentConfig)
+          : null;
       const codingQuestionContext = selectedCodingQuestion
         ? `
 
@@ -429,6 +432,9 @@ Rules for using this context:
 - Treat it as an explicit user brief for this room.
 - Use it actively when framing questions and follow-ups.
 - Do not invent details beyond what the user provided.
+${agentSlug === "coding"
+  ? "- If this context includes a specific coding question, LeetCode problem, or problem statement, use that as the interview problem instead of the default fallback bank.\n- When user-provided coding context specifies the problem, do not replace it with another problem."
+  : ""}
 `
         : "";
 
