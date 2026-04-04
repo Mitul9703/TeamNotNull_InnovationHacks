@@ -478,6 +478,26 @@ function registerLiveBridge(server) {
     let assemblyTranscriber = null;
     let conversationHistory = [];
     let liveConnected = false;
+    let kickoffSent = false;
+    let kickoffTimer = null;
+
+    function sendKickoff(text) {
+      const kickoffText = (text || "").trim();
+      if (!kickoffText || !liveConnected || !session || kickoffSent) {
+        return;
+      }
+
+      kickoffSent = true;
+      session.sendClientContent({
+        turns: [
+          {
+            role: "user",
+            parts: [{ text: kickoffText }],
+          },
+        ],
+        turnComplete: true,
+      });
+    }
 
     async function connectLive() {
       const hasCustomCodingPrompt = agentSlug === "coding" && !!customContext;
@@ -664,6 +684,12 @@ ${extraContext}
     try {
       await connectLive();
       await connectAssembly();
+      kickoffTimer = setTimeout(() => {
+        sendKickoff(
+          agentConfig.sessionKickoff ||
+            `Begin this ${agentConfig.name} rehearsal with a short greeting, quick introduction, and the first question.`,
+        );
+      }, 700);
     } catch (error) {
       console.error("Failed to open Gemini Live session:", error);
       clientSocket.send(
@@ -715,20 +741,7 @@ ${extraContext}
         }
 
         if (msg.type === "kickoff") {
-          const text = (msg.text || "").trim();
-          if (!text || !liveConnected || !session) {
-            return;
-          }
-
-          session.sendClientContent({
-            turns: [
-              {
-                role: "user",
-                parts: [{ text }],
-              },
-            ],
-            turnComplete: true,
-          });
+          sendKickoff(msg.text || "");
         }
 
         if (msg.type === "user_audio") {
@@ -775,18 +788,8 @@ ${extraContext}
             return;
           }
 
-          session.sendClientContent({
-            turns: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: `Candidate code snapshot update (${msg.language || "pseudocode"}):\n${snapshot}`,
-                  },
-                ],
-              },
-            ],
-            turnComplete: false,
+          session.sendRealtimeInput({
+            text: `Candidate code snapshot update (${msg.language || "pseudocode"}):\n${snapshot}`,
           });
         }
 
@@ -810,6 +813,10 @@ ${extraContext}
     });
 
     clientSocket.on("close", async () => {
+      if (kickoffTimer) {
+        clearTimeout(kickoffTimer);
+        kickoffTimer = null;
+      }
       try {
         await session?.close();
       } catch (_error) {}

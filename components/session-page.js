@@ -370,7 +370,7 @@ export function SessionPage({ slug }) {
       );
       lastSentCodeRef.current = codeDraft;
       setCodeSyncState("synced");
-    }, 5000);
+    }, 3000);
 
     return () => {
       if (codeSyncTimerRef.current) {
@@ -420,14 +420,6 @@ export function SessionPage({ slug }) {
     socket.onopen = () => {
       setStatusText("Connected to the live question bridge.");
       socket.send(JSON.stringify({ type: "get_history" }));
-      socket.send(
-        JSON.stringify({
-          type: "kickoff",
-          text:
-            agent.sessionKickoff ||
-            `Begin this ${agent.name} rehearsal with a short greeting, quick introduction, and the first question.`,
-        }),
-      );
       if (isCodingAgent && codeDraft.trim()) {
         socket.send(
           JSON.stringify({
