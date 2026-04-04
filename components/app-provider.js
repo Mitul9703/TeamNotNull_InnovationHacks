@@ -261,6 +261,36 @@ export function AppProvider({ children }) {
     }));
   }, []);
 
+  const clearAgentSessions = useCallback(
+    (slug) => {
+      const sessionsToClear = state.sessions?.[slug] || [];
+
+      sessionsToClear.forEach((session) => {
+        const key = `${slug}:${session.id}`;
+        const evaluationController = evaluationJobsRef.current.get(key);
+        if (evaluationController) {
+          evaluationController.abort();
+          evaluationJobsRef.current.delete(key);
+        }
+
+        const resourceController = resourceJobsRef.current.get(key);
+        if (resourceController) {
+          resourceController.abort();
+          resourceJobsRef.current.delete(key);
+        }
+      });
+
+      setState((current) => ({
+        ...current,
+        sessions: {
+          ...current.sessions,
+          [slug]: [],
+        },
+      }));
+    },
+    [state.sessions],
+  );
+
   const runResourceJob = useCallback(
     async (session) => {
       const jobKey = `${session.agentSlug}:${session.id}`;
@@ -549,6 +579,7 @@ export function AppProvider({ children }) {
       setTheme,
       patchAgent,
       patchSession,
+      clearAgentSessions,
       requestResourceFetch,
       createSessionRecord,
       dismissToast,
@@ -560,6 +591,7 @@ export function AppProvider({ children }) {
       mounted,
       patchAgent,
       patchSession,
+      clearAgentSessions,
       requestResourceFetch,
       setTheme,
       state,

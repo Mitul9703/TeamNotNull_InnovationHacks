@@ -46,7 +46,7 @@ function UploadStatus({ upload }) {
 export function AgentDetailPage({ slug }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state, patchAgent } = useAppState();
+  const { state, patchAgent, clearAgentSessions } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const [localError, setLocalError] = useState("");
   const justEnded = searchParams.get("ended") === "1";
@@ -290,8 +290,19 @@ export function AgentDetailPage({ slug }) {
           </div>
 
           <div className="metric-card">
-            <div className="section-title">
-              Past sessions{justEnded ? " • updated" : ""}
+            <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div className="section-title">
+                Past sessions{justEnded ? " • updated" : ""}
+              </div>
+              {pastSessions.length ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => clearAgentSessions(slug)}
+                >
+                  Delete history
+                </button>
+              ) : null}
             </div>
             <div className="sidebar-stack">
               {pastSessions.length ? (

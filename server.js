@@ -612,15 +612,6 @@ ${extraContext}
         }
 
         if (msg.type === "user_audio") {
-          if (assemblyTranscriber) {
-            try {
-              const pcmBytes = Buffer.from(msg.data, "base64");
-              assemblyTranscriber.sendAudio(pcmBytes);
-            } catch (error) {
-              console.error("AssemblyAI audio forwarding error:", error);
-            }
-          }
-
           if (!liveConnected || !session) {
             return;
           }
@@ -631,6 +622,17 @@ ${extraContext}
               mimeType: msg.mimeType || "audio/pcm;rate=16000",
             },
           });
+
+          if (assemblyTranscriber) {
+            queueMicrotask(() => {
+              try {
+                const pcmBytes = Buffer.from(msg.data, "base64");
+                assemblyTranscriber.sendAudio(pcmBytes);
+              } catch (error) {
+                console.error("AssemblyAI audio forwarding error:", error);
+              }
+            });
+          }
         }
 
         if (msg.type === "save_model_text") {
