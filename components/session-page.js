@@ -117,6 +117,8 @@ export function SessionPage({ slug }) {
   const agent = AGENT_LOOKUP[slug];
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
+  const isCodingAgent = slug === "coding";
+  const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
 
   const [permissionState, setPermissionState] = useState("pending");
   const [sessionPhase, setSessionPhase] = useState("preflight");
@@ -126,6 +128,9 @@ export function SessionPage({ slug }) {
   const [transcript, setTranscript] = useState([]);
   const [elapsed, setElapsed] = useState(0);
   const [startAttempt, setStartAttempt] = useState(0);
+  const [codeLanguage, setCodeLanguage] = useState(codingLanguages[0] || "JavaScript");
+  const [codeDraft, setCodeDraft] = useState("");
+  const [codeSyncState, setCodeSyncState] = useState("idle");
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -145,6 +150,8 @@ export function SessionPage({ slug }) {
   const transcriptListRef = useRef(null);
   const modelBufferRef = useRef("");
   const userBufferRef = useRef("");
+  const codeSyncTimerRef = useRef(null);
+  const lastSentCodeRef = useRef("");
   const transcriptEntries = [
     ...transcript,
     ...(userBuffer.trim()
@@ -272,6 +279,50 @@ export function SessionPage({ slug }) {
     element.scrollTop = element.scrollHeight;
   }, [transcriptEntries]);
 
+  useEffect(() => {
+    if (!isCodingAgent) return undefined;
+    if (codeSyncTimerRef.current) {
+      window.clearTimeout(codeSyncTimerRef.current);
+    }
+
+    if (!codeDraft.trim() || codeDraft === lastSentCodeRef.current) {
+      if (sessionPhase === "live" && codeDraft === lastSentCodeRef.current) {
+        setCodeSyncState("synced");
+      }
+      return undefined;
+    }
+
+    if (!browserSocketRef.current || browserSocketRef.current.readyState !== WebSocket.OPEN) {
+      setCodeSyncState("waiting");
+      return undefined;
+    }
+
+    setCodeSyncState("typing");
+    codeSyncTimerRef.current = window.setTimeout(() => {
+      const socket = browserSocketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        setCodeSyncState("waiting");
+        return;
+      }
+
+      socket.send(
+        JSON.stringify({
+          type: "code_snapshot",
+          language: codeLanguage,
+          snapshot: codeDraft,
+        }),
+      );
+      lastSentCodeRef.current = codeDraft;
+      setCodeSyncState("synced");
+    }, 2500);
+
+    return () => {
+      if (codeSyncTimerRef.current) {
+        window.clearTimeout(codeSyncTimerRef.current);
+      }
+    };
+  }, [codeDraft, codeLanguage, isCodingAgent, sessionPhase]);
+
   async function createMicPipeline(mediaStream) {
     const audioContext = new window.AudioContext();
     const sourceNode = audioContext.createMediaStreamSource(mediaStream);
@@ -315,10 +366,23 @@ export function SessionPage({ slug }) {
       socket.send(JSON.stringify({ type: "get_history" }));
       socket.send(
         JSON.stringify({
-          type: "user_text",
-          text: `Begin this ${agent.name} rehearsal with a short greeting, quick introduction, and the first question.`,
+          type: "kickoff",
+          text:
+            agent.sessionKickoff ||
+            `Begin this ${agent.name} rehearsal with a short greeting, quick introduction, and the first question.`,
         }),
       );
+      if (isCodingAgent && codeDraft.trim()) {
+        socket.send(
+          JSON.stringify({
+            type: "code_snapshot",
+            language: codeLanguage,
+            snapshot: codeDraft,
+          }),
+        );
+        lastSentCodeRef.current = codeDraft;
+        setCodeSyncState("synced");
+      }
     };
 
     socket.onmessage = (event) => {
@@ -523,6 +587,11 @@ export function SessionPage({ slug }) {
     }
 
     cleanupPromiseRef.current = (async () => {
+      if (codeSyncTimerRef.current) {
+        window.clearTimeout(codeSyncTimerRef.current);
+        codeSyncTimerRef.current = null;
+      }
+
       if (processorNodeRef.current) {
         processorNodeRef.current.disconnect();
         processorNodeRef.current = null;
@@ -624,6 +693,12 @@ export function SessionPage({ slug }) {
             fileName: upload.fileName,
             contextPreview: upload.contextPreview,
             contextText: upload.contextText,
+          }
+        : null,
+      coding: isCodingAgent
+        ? {
+            language: codeLanguage,
+            finalCode: codeDraft,
           }
         : null,
     });
@@ -765,30 +840,96 @@ export function SessionPage({ slug }) {
             )}
           </div>
 
-          <div className="transcript-card">
-            <div className="section-title">Live transcript</div>
-            <p className="muted-copy">
-              Current status: {statusText}
-            </p>
-            <div className="transcript-list" ref={transcriptListRef}>
-              {transcriptEntries.length ? (
-                transcriptEntries.map((entry, index) => (
-                  <div className="transcript-item" key={entry.id || `${entry.role}-${index}`}>
-                    <div className="transcript-role">
-                      {entry.role}
-                      {entry.live ? " • Live" : ""}
-                    </div>
-                    <p className="transcript-text">{entry.text}</p>
+          {isCodingAgent ? (
+            <div className="coding-sidebar">
+              <div className="transcript-card">
+                <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div className="section-title">Live codepad</div>
+                  <div className={`status-chip ${codeSyncState === "synced" ? "status-success" : codeSyncState === "typing" ? "status-warning" : ""}`}>
+                    <span className="status-dot" />
+                    {codeSyncState === "synced"
+                      ? "Code synced to interviewer"
+                      : codeSyncState === "typing"
+                        ? "Preparing snapshot..."
+                        : codeSyncState === "waiting"
+                          ? "Waiting for room connection"
+                          : "Type while you think aloud"}
                   </div>
-                ))
-              ) : (
-                <div className="empty-state">
-                  Transcript will appear here after the greeting and first
-                  question begin.
                 </div>
-              )}
+                <div className="button-row" style={{ marginBottom: 14, alignItems: "center" }}>
+                  <label className="metric-label" htmlFor="code-language">
+                    Language
+                  </label>
+                  <select
+                    id="code-language"
+                    className="language-select"
+                    value={codeLanguage}
+                    onChange={(event) => setCodeLanguage(event.target.value)}
+                  >
+                    {codingLanguages.map((language) => (
+                      <option key={language} value={language}>
+                        {language}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  className="code-editor"
+                  spellCheck={false}
+                  value={codeDraft}
+                  onChange={(event) => setCodeDraft(event.target.value)}
+                  placeholder="Write interview code here while explaining your thought process aloud."
+                />
+              </div>
+
+              <div className="transcript-card">
+                <div className="section-title">Live transcript</div>
+                <p className="muted-copy">Current status: {statusText}</p>
+                <div className="transcript-list transcript-list-compact" ref={transcriptListRef}>
+                  {transcriptEntries.length ? (
+                    transcriptEntries.map((entry, index) => (
+                      <div className="transcript-item" key={entry.id || `${entry.role}-${index}`}>
+                        <div className="transcript-role">
+                          {entry.role}
+                          {entry.live ? " • Live" : ""}
+                        </div>
+                        <p className="transcript-text">{entry.text}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      Transcript will appear here after the problem intro begins.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="transcript-card">
+              <div className="section-title">Live transcript</div>
+              <p className="muted-copy">
+                Current status: {statusText}
+              </p>
+              <div className="transcript-list" ref={transcriptListRef}>
+                {transcriptEntries.length ? (
+                  transcriptEntries.map((entry, index) => (
+                    <div className="transcript-item" key={entry.id || `${entry.role}-${index}`}>
+                      <div className="transcript-role">
+                        {entry.role}
+                        {entry.live ? " • Live" : ""}
+                      </div>
+                      <p className="transcript-text">{entry.text}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    Transcript will appear here after the greeting and first
+                    question begin.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="session-footer">

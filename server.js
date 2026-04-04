@@ -25,6 +25,7 @@ const upload = multer({ dest: "uploads/" });
 
 let uploadedContextText = "";
 let uploadedFileName = "";
+let codingQuestionIndex = 0;
 
 const evaluationResponseSchema = {
   type: Type.OBJECT,
@@ -155,6 +156,32 @@ function buildTranscriptText(transcript) {
     .join("\n");
 }
 
+function buildCodingContext(coding) {
+  if (!coding) return "";
+
+  return `
+Coding session context:
+Selected language: ${coding.language || "Unspecified"}
+
+Latest candidate code:
+${coding.finalCode?.trim() || "No code was saved."}
+  `.trim();
+}
+
+function selectCodingQuestion(agentConfig) {
+  const bank = Array.isArray(agentConfig.codingQuestionBank)
+    ? agentConfig.codingQuestionBank
+    : [];
+
+  if (!bank.length) {
+    return null;
+  }
+
+  const question = bank[codingQuestionIndex % bank.length];
+  codingQuestionIndex += 1;
+  return question;
+}
+
 function normalizeEvaluationResult(agent, rawResult) {
   const criteria = agent.evaluationCriteria || [];
   const metricsByLabel = new Map(
@@ -203,15 +230,20 @@ function normalizeEvaluationResult(agent, rawResult) {
   };
 }
 
-function buildTinyFishGoal({ brief, kind }) {
+function buildTinyFishGoal({ brief, kind, agentSlug }) {
+  const isCoding = agentSlug === "coding";
   const phrases = (brief.searchPhrases || []).filter(Boolean).join("; ");
   const typeHint =
-    kind === "video"
-      ? 'Set "type" to "youtube".'
-      : 'Set "type" to "article" or "website" depending on what the result is.';
+    isCoding
+      ? kind === "video"
+        ? 'Set "type" to "youtube". Prefer strong coding-interview channels when relevant.'
+        : 'Set "type" to "leetcode", "article", or "website". Prefer LeetCode, NeetCode, or strong algorithm explainers.'
+      : kind === "video"
+        ? 'Set "type" to "youtube".'
+        : 'Set "type" to "article" or "website" depending on what the result is.';
 
   return `
-Find high-quality ${kind === "video" ? "YouTube videos" : "articles and websites"} that help a user improve this communication skill.
+Find high-quality ${kind === "video" ? "YouTube videos" : "articles and websites"} that help a user improve this ${isCoding ? "coding interview skill" : "communication skill"}.
 
 Topic: ${brief.topic}
 Improvement area: ${brief.improvement}
@@ -299,16 +331,22 @@ function parseTinyFishResources(result) {
 }
 
 async function fetchTinyFishResourcesForBrief(brief) {
-  const videoGoal = buildTinyFishGoal({ brief, kind: "video" });
-  const articleGoal = buildTinyFishGoal({ brief, kind: "article" });
+  const videoGoal = buildTinyFishGoal({ brief, kind: "video", agentSlug: brief.agentSlug });
+  const articleGoal = buildTinyFishGoal({ brief, kind: "article", agentSlug: brief.agentSlug });
 
   const [videoResult, articleResult] = await Promise.all([
     runTinyFish({
-      url: "https://www.youtube.com/results?search_query=public+speaking",
+      url:
+        brief.agentSlug === "coding"
+          ? "https://www.youtube.com/results?search_query=leetcode+patterns"
+          : "https://www.youtube.com/results?search_query=public+speaking",
       goal: videoGoal,
     }),
     runTinyFish({
-      url: "https://duckduckgo.com/",
+      url:
+        brief.agentSlug === "coding"
+          ? "https://leetcode.com/problemset/"
+          : "https://duckduckgo.com/",
       goal: articleGoal,
     }),
   ]);
@@ -351,6 +389,22 @@ function registerLiveBridge(server) {
     let liveConnected = false;
 
     async function connectLive() {
+      const selectedCodingQuestion =
+        agentSlug === "coding" ? selectCodingQuestion(agentConfig) : null;
+      const codingQuestionContext = selectedCodingQuestion
+        ? `
+
+For this coding session, you must use this exact interview question and no other:
+Title: ${selectedCodingQuestion.title}
+Difficulty: ${selectedCodingQuestion.difficulty}
+Prompt: ${selectedCodingQuestion.prompt}
+
+Important:
+- Introduce this exact problem aloud near the start of the interview.
+- Do not switch to palindrome or any other coding prompt.
+- Keep the interview anchored to this question for the rest of the session.
+`
+        : "";
       const extraContext = uploadedContextText
         ? `
 
@@ -371,6 +425,8 @@ Rules for grounded usage:
           outputAudioTranscription: {},
           systemInstruction: `
 ${agentConfig.systemPrompt}
+
+${codingQuestionContext}
 
 ${extraContext}
           `.trim(),
@@ -527,7 +583,32 @@ ${extraContext}
             return;
           }
 
-          session.sendRealtimeInput({ text });
+          session.sendClientContent({
+            turns: [
+              {
+                role: "user",
+                parts: [{ text }],
+              },
+            ],
+            turnComplete: true,
+          });
+        }
+
+        if (msg.type === "kickoff") {
+          const text = (msg.text || "").trim();
+          if (!text || !liveConnected || !session) {
+            return;
+          }
+
+          session.sendClientContent({
+            turns: [
+              {
+                role: "user",
+                parts: [{ text }],
+              },
+            ],
+            turnComplete: true,
+          });
         }
 
         if (msg.type === "user_audio") {
@@ -564,6 +645,17 @@ ${extraContext}
               history: conversationHistory,
             }),
           );
+        }
+
+        if (msg.type === "code_snapshot") {
+          const snapshot = (msg.snapshot || "").trim();
+          if (!snapshot || !liveConnected || !session) {
+            return;
+          }
+
+          session.sendRealtimeInput({
+            text: `Candidate code snapshot update (${msg.language || "pseudocode"}):\n${snapshot}`,
+          });
         }
 
         if (msg.type === "get_history") {
@@ -689,6 +781,7 @@ ${rawText}`,
         agentSlug,
         transcript,
         upload,
+        coding,
         durationLabel,
         startedAt,
         endedAt,
@@ -713,6 +806,7 @@ ${rawText}`,
       const uploadContext = upload?.contextText?.trim()
         ? upload.contextText.trim()
         : "No uploaded file context was provided for this session.";
+      const codingContext = buildCodingContext(coding);
 
       const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
@@ -739,11 +833,12 @@ Instructions:
 - Keep the feedback human and useful, not robotic.
 - Return up to 2 resource briefs for the most important improvement areas.
 - Each resource brief should be distinct and should help a later web-search tool find concrete learning resources.
+- Use the saved code when it is relevant, but do not pretend the code was executed.
 
 Uploaded file context:
 ${uploadContext}
 
-Complete labeled transcript:
+${codingContext ? `${codingContext}\n\n` : ""}Complete labeled transcript:
 ${transcriptText}
       `.trim();
 
@@ -781,7 +876,7 @@ ${transcriptText}
         });
       }
 
-      const { resourceBriefs } = req.body || {};
+      const { resourceBriefs, agentSlug } = req.body || {};
       const briefs = Array.isArray(resourceBriefs) ? resourceBriefs.slice(0, 2) : [];
 
       if (!briefs.length) {
@@ -793,7 +888,10 @@ ${transcriptText}
 
       const topics = await Promise.all(
         briefs.map(async (brief, index) => {
-          const items = await fetchTinyFishResourcesForBrief(brief);
+          const items = await fetchTinyFishResourcesForBrief({
+            ...brief,
+            agentSlug,
+          });
           return {
             id: brief.id || `topic-${index + 1}`,
             topic: brief.topic,

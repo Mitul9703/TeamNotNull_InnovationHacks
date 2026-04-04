@@ -50,6 +50,19 @@ export function SessionDetailPage({ slug, sessionId }) {
             </p>
           </div>
 
+          {session.coding ? (
+            <div className="detail-block">
+              <div className="section-title">Coding workspace</div>
+              <p className="muted-copy" style={{ marginTop: 0 }}>
+                Final language selection: {session.coding.language || "Unspecified"}
+              </p>
+              <div className="subtle-card">
+                <div className="section-title">Final code</div>
+                <pre className="code-block">{session.coding.finalCode || "// No code was saved."}</pre>
+              </div>
+            </div>
+          ) : null}
+
           <div className="detail-block">
             <div className="section-title">Transcript</div>
             <div className="transcript-list" style={{ maxHeight: "none" }}>

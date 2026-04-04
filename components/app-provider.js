@@ -328,6 +328,7 @@ export function AppProvider({ children }) {
             durationLabel: session.durationLabel,
             transcript: session.transcript || [],
             upload: session.upload || null,
+            coding: session.coding || null,
           }),
           signal: abortController.signal,
         });

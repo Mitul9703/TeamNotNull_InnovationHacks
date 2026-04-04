@@ -117,6 +117,74 @@ export default [
     }
   },
   {
+    "slug": "coding",
+    "name": "Coding Round",
+    "role": "Technical interview",
+    "duration": "12 min room",
+    "description": "Practice a simple live coding round where you explain your thinking aloud while sketching the solution in code or pseudocode.",
+    "longDescription": "This room simulates an early technical interview where the interviewer introduces the coding question aloud and wants to hear how you reason while you type. It is built for a lightweight prototype flow: one approachable interview problem, think-aloud problem solving, and follow-up discussion about tradeoffs and complexity.",
+    "scenario": "A live coding interview where the interviewer introduces the problem verbally and the candidate solves it while thinking aloud.",
+    "focus": ["Think-aloud reasoning", "Algorithm clarity", "Code communication"],
+    "flow": [
+      "The interviewer opens the round and verbally introduces a simple coding problem.",
+      "The candidate talks through the approach while writing code or pseudocode.",
+      "Follow-up questions probe edge cases, complexity, and code quality."
+    ],
+    "previewMetrics": [
+      { "label": "Reasoning", "value": "83" },
+      { "label": "Code clarity", "value": "79" }
+    ],
+    "evaluationCriteria": [
+      { "label": "Problem understanding", "description": "How well the speaker identifies the task, clarifies assumptions, and frames the solution before coding." },
+      { "label": "Algorithmic reasoning", "description": "How clearly the speaker explains the chosen approach, tradeoffs, and complexity while solving the problem." },
+      { "label": "Code clarity", "description": "How readable, organized, and interview-ready the written solution or pseudocode is." },
+      { "label": "Communication while coding", "description": "How well the speaker maintains a useful think-aloud narrative while typing and responding to follow-up questions." }
+    ],
+    "codingLanguages": ["JavaScript", "Python", "Java", "C++", "Pseudocode"],
+    "codingQuestionBank": [
+      {
+        "title": "Two Sum",
+        "difficulty": "Easy",
+        "prompt": "Given an array of integers and a target value, return the indices of the two numbers that add up to the target. Assume there is exactly one valid answer and the same element cannot be used twice."
+      },
+      {
+        "title": "Top K Frequent Elements",
+        "difficulty": "Medium",
+        "prompt": "Given an integer array and an integer k, return the k most frequent elements. The answer can be returned in any order."
+      },
+      {
+        "title": "Merge Intervals",
+        "difficulty": "Medium",
+        "prompt": "Given an array of intervals where each interval has a start and end time, merge all overlapping intervals and return the resulting list."
+      },
+      {
+        "title": "Product of Array Except Self",
+        "difficulty": "Medium",
+        "prompt": "Given an integer array, return an array such that each element at index i is the product of all the numbers in the array except the one at i, without using division."
+      },
+      {
+        "title": "Best Time to Buy and Sell Stock",
+        "difficulty": "Easy",
+        "prompt": "Given an array where each value represents a stock price on a given day, find the maximum profit you can achieve from one buy and one sell. You must buy before you sell."
+      }
+    ],
+    "sessionKickoff": "Start speaking first. Open this coding interview with a short greeting, then introduce a simple interview-style coding problem aloud. Ask the candidate to think aloud while coding, and keep your follow-ups focused on reasoning, edge cases, complexity, and code quality.",
+    "systemPrompt": "You are PitchMirror acting as a realistic technical interviewer conducting a live coding rehearsal.\n\nYour role:\n- Act like a calm, practical interviewer in an early technical round.\n- Start the session yourself with a short greeting and then verbally introduce one simple interview-style coding problem.\n- Listen carefully to the candidate's spoken reasoning and also pay attention to any code snapshot updates supplied during the session.\n- Ask natural follow-up questions about the approach, tradeoffs, edge cases, complexity, and readability.\n- Sound professional, natural, and conversational.\n\nPrimary behavior:\n- Speak first and own the interview flow.\n- Ask one question at a time.\n- Encourage the candidate to explain their thought process while coding.\n- Use the latest code snapshot when it is relevant, but do not pretend to execute code.\n- Treat the written solution as pseudocode or interview code unless the candidate makes the language explicit.\n\nGrounding rules:\n- Introduce only one approachable coding problem suitable for a prototype technical round.\n- Only refer to the coding problem you introduced, the candidate's spoken answers, and the code snapshots shared during the session.\n- Do not invent test results, runtime output, or hidden bugs unless they are apparent from the code itself.\n- If the code is incomplete, ask what the candidate intended rather than guessing.\n\nInterview style:\n- Focus on problem understanding, algorithm choice, edge cases, time and space complexity, and code clarity.\n- If the candidate is vague, ask for a sharper explanation.\n- If the candidate is doing well, go deeper into complexity or alternative approaches.\n\nConversation policy:\n- Maintain continuity across the conversation.\n- Remember prior explanations and earlier code snapshots.\n- Prefer helpful, realistic interview pressure over trivia.",
+    "evaluationPrompt": "You are a careful evaluator reviewing a completed coding interview rehearsal. Judge the candidate the way a strong technical interviewer would: grounded, specific, and focused on how they reasoned aloud while writing code. Score only the rubric dimensions defined for this agent. Use the transcript and the final saved code to judge the candidate. The interviewer introduced the coding question verbally during the session, so infer the problem context from the transcript and code rather than expecting a predefined prompt. Do not pretend code was executed. Every metric justification must reference the candidate's spoken reasoning, the written solution, or both.",
+    "mockEvaluation": {
+      "score": 84,
+      "metrics": [
+        { "label": "Problem understanding", "value": 86 },
+        { "label": "Algorithmic reasoning", "value": 84 },
+        { "label": "Code clarity", "value": 79 },
+        { "label": "Communication while coding", "value": 87 }
+      ],
+      "summary": "Simulated evaluation complete. This session showed a good think-aloud process and a workable solution, with room to make the final code more polished and explicit about complexity.",
+      "strengths": ["Clear approach explanation", "Good handling of edge cases", "Steady communication while typing"],
+      "improvements": ["State complexity earlier", "Make variable naming clearer", "Narrate code changes more explicitly"]
+    }
+  },
+  {
     "slug": "custom",
     "name": "Custom Agent",
     "role": "Flexible rehearsal",
