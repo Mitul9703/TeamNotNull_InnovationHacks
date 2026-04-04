@@ -38,6 +38,14 @@ function ExternalLinkIcon() {
   );
 }
 
+function ChevronIcon() {
+  return (
+    <svg className="resource-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  );
+}
+
 function Spinner({ label }) {
   return (
     <div className="eval-loading-inner">
@@ -279,9 +287,12 @@ export function SessionDetailPage({ slug, sessionId }) {
                       <div className="resource-topic">{topic.topic}</div>
                       <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>{topic.whyThisMatters}</p>
                     </div>
-                    <span className="pill">{topic.items?.length || 0} resources</span>
+                    <span className="resource-count-pill">
+                      {topic.items?.length || 0} {topic.items?.length === 1 ? "resource" : "resources"}
+                      <ChevronIcon />
+                    </span>
                   </summary>
-                  <div className="resource-grid">
+                  <div className="resource-grid" data-count={topic.items?.length || 0}>
                     {(topic.items || []).map((item) => {
                       const isYT = isYouTubeUrl(item.url);
                       return (

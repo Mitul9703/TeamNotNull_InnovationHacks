@@ -22,15 +22,8 @@ const AGENT_BG_CLASS = {
   custom:    "agent-bg-custom",
 };
 
-// Rotating colourful pill palette — 6 distinct colours
-const PILL_PALETTE = [
-  "pill-amber",
-  "pill-blue",
-  "pill-green",
-  "pill-purple",
-  "pill-teal",
-  "pill-rose",
-];
+// All focus chips use the accent orange palette
+const PILL_COLOR = "pill-accent";
 
 export function AgentsPage() {
   return (
@@ -43,7 +36,7 @@ export function AgentsPage() {
       </div>
 
       <div className="agents-grid">
-        {AGENTS.map((agent, agentIdx) => {
+        {AGENTS.map((agent) => {
           const isCustom  = agent.slug === "custom";
           const isCoding  = agent.slug === "coding";
           const bgClass   = AGENT_BG_CLASS[agent.slug] || "";
@@ -69,16 +62,13 @@ export function AgentsPage() {
 
               {/* Focus chips — colourful, consistent contrast */}
               <div className="pill-row" style={{ marginTop: "auto" }}>
-                {agent.focus.map((item, i) => (
-                  <span
-                    className={`pill ${PILL_PALETTE[(agentIdx * 3 + i) % PILL_PALETTE.length]}`}
-                    key={item}
-                  >
+                {agent.focus.map((item) => (
+                  <span className={`pill ${PILL_COLOR}`} key={item}>
                     {item}
                   </span>
                 ))}
                 {isCoding && (
-                  <span className="pill pill-emerald">Code editor plugin</span>
+                  <span className={`pill ${PILL_COLOR}`}>Code editor plugin</span>
                 )}
               </div>
             </Link>

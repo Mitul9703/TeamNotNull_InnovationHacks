@@ -7,15 +7,8 @@ import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
-// Colour cycle for evaluation criteria labels
-const CRITERIA_COLORS = [
-  "criteria-label-amber",
-  "criteria-label-blue",
-  "criteria-label-green",
-  "criteria-label-purple",
-  "criteria-label-teal",
-  "criteria-label-rose",
-];
+// All criteria labels use the accent orange
+const CRITERIA_COLOR = "criteria-label-accent";
 
 function CollapsibleList({ items, initialMax = 3 }) {
   const [expanded, setExpanded] = useState(false);
@@ -36,6 +29,30 @@ function CollapsibleList({ items, initialMax = 3 }) {
         >
           {expanded ? "▲ Show less" : `▼ Show all ${items.length}`}
         </button>
+      )}
+    </div>
+  );
+}
+
+function ContextPreviewToggle({ preview }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="subtle-card" style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span className="metric-label" style={{ marginBottom: 0 }}>Prepared context preview</span>
+        <button
+          type="button"
+          className="toggle-btn"
+          style={{ marginTop: 0 }}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "▲ Hide preview" : "▼ Show preview"}
+        </button>
+      </div>
+      {open && (
+        <p className="muted-copy" style={{ margin: "10px 0 0", fontSize: "0.88rem" }}>
+          {preview}
+        </p>
       )}
     </div>
   );
@@ -163,7 +180,7 @@ export function AgentDetailPage({ slug }) {
           <div className="criteria-grid">
             {visibleCriteria.map((criterion, index) => (
               <div className="subtle-card" key={criterion.label}>
-                <span className={`metric-label criteria-label ${CRITERIA_COLORS[index % CRITERIA_COLORS.length]}`}>
+                <span className={`metric-label criteria-label ${CRITERIA_COLOR}`}>
                   {criterion.label}
                 </span>
                 <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>
@@ -311,12 +328,7 @@ export function AgentDetailPage({ slug }) {
           )}
 
           {upload.status === "success" && upload.contextPreview ? (
-            <div className="subtle-card" style={{ marginTop: 14 }}>
-              <span className="metric-label">Prepared context preview</span>
-              <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>
-                {upload.contextPreview}
-              </p>
-            </div>
+            <ContextPreviewToggle preview={upload.contextPreview} />
           ) : null}
         </div>
 

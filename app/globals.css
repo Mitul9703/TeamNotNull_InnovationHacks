@@ -1743,3 +1743,145 @@ button {
   font-size: 0.85rem;
 }
 
+
+/* ─── FINAL POLISH PASS ─────────────────────────────────────────── */
+
+/* ── Unified accent-orange chip ──────────────────────────────── */
+.pill-accent {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid rgba(217, 119, 87, 0.28);
+}
+[data-theme="light"] .pill-accent {
+  background: rgba(199, 101, 72, 0.12);
+  color: var(--accent);
+  border-color: rgba(199, 101, 72, 0.24);
+}
+
+/* ── Unified accent criteria label ───────────────────────────── */
+.criteria-label-accent {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid rgba(217, 119, 87, 0.28);
+}
+[data-theme="light"] .criteria-label-accent {
+  background: rgba(199, 101, 72, 0.12);
+  color: var(--accent);
+  border-color: rgba(199, 101, 72, 0.24);
+}
+
+/* ── Resource count pill with chevron ────────────────────────── */
+.resource-count-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid rgba(217, 119, 87, 0.28);
+  font-size: 0.84rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+}
+[data-theme="light"] .resource-count-pill {
+  background: rgba(199, 101, 72, 0.12);
+  color: var(--accent);
+  border-color: rgba(199, 101, 72, 0.24);
+}
+
+.resource-chevron {
+  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  flex-shrink: 0;
+}
+
+details[open] .resource-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── Adaptive resource grid by count ─────────────────────────── */
+.resource-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0 18px 18px;
+}
+
+.resource-grid[data-count="1"] {
+  grid-template-columns: 1fr;
+  max-width: 520px;
+}
+
+.resource-grid[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.resource-grid[data-count="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .resource-grid[data-count="3"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .resource-grid,
+  .resource-grid[data-count="2"],
+  .resource-grid[data-count="3"] {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Page transition animations ──────────────────────────────── */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes page-enter-fast {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Apply entrance animation to all main page content areas */
+.hero-centered {
+  animation: page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.steps-panel {
+  animation: page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+}
+
+.page-header {
+  animation: page-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.agents-grid {
+  animation: page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+}
+
+.page-single {
+  animation: page-enter 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Stagger individual agent cards on mount */
+.agent-card:nth-child(1) { animation: page-enter-fast 350ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both; }
+.agent-card:nth-child(2) { animation: page-enter-fast 350ms cubic-bezier(0.22, 1, 0.36, 1) 90ms both; }
+.agent-card:nth-child(3) { animation: page-enter-fast 350ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both; }
+.agent-card:nth-child(4) { animation: page-enter-fast 350ms cubic-bezier(0.22, 1, 0.36, 1) 190ms both; }
+.agent-card:nth-child(5) { animation: page-enter-fast 350ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both; }
