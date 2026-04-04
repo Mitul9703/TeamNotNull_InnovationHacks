@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { AGENTS } from "../lib/agents";
+import { getApiUrl } from "../lib/client-config";
 
 const AppContext = createContext(null);
 const STORAGE_KEY = "pitchmirror-state-v1";
@@ -350,7 +351,7 @@ export function AppProvider({ children }) {
       }));
 
       try {
-        const response = await fetch("/api/session-resources", {
+        const response = await fetch(getApiUrl("/api/session-resources"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -426,7 +427,7 @@ export function AppProvider({ children }) {
       }));
 
       try {
-        const response = await fetch("/api/evaluate-session", {
+        const response = await fetch(getApiUrl("/api/evaluate-session"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -550,7 +551,7 @@ export function AppProvider({ children }) {
       }));
 
       try {
-        const response = await fetch("/api/compare-sessions", {
+        const response = await fetch(getApiUrl("/api/compare-sessions"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

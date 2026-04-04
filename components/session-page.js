@@ -16,6 +16,7 @@ import {
   generateSimliSessionToken,
 } from "simli-client";
 import { AGENT_LOOKUP } from "../lib/agents";
+import { getBackendWsUrl } from "../lib/client-config";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -645,9 +646,7 @@ export function SessionPage({ slug }) {
 
       await simliClient.start();
 
-      const socketUrl = `${
-        window.location.protocol === "https:" ? "wss" : "ws"
-      }://${window.location.host}/api/live?agent=${encodeURIComponent(slug)}&context=${encodeURIComponent(customContextText)}&voice=${encodeURIComponent(avatarProfile?.voiceName || "")}`;
+      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&context=${encodeURIComponent(customContextText)}&voice=${encodeURIComponent(avatarProfile?.voiceName || "")}`;
       const socket = new WebSocket(socketUrl);
       browserSocketRef.current = socket;
       attachSocketHandlers(socket);

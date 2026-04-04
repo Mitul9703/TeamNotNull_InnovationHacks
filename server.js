@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import express from "express";
+import cors from "cors";
 import dotenv from "dotenv";
 import multer from "multer";
 import next from "next";
@@ -16,7 +17,7 @@ const { PDFParse } = require("pdf-parse");
 dotenv.config();
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = "127.0.0.1";
+const hostname = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 3000);
 
 const nextApp = next({ dev, hostname, port });
@@ -842,6 +843,7 @@ async function startServer() {
   const nextUpgradeHandler = nextApp.getUpgradeHandler();
 
   const app = express();
+  app.use(cors());
   app.use(express.json());
 
   app.get("/api/health", (_req, res) => {

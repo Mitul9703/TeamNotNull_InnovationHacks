@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AGENT_LOOKUP } from "../lib/agents";
+import { getApiUrl } from "../lib/client-config";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -108,7 +109,7 @@ export function AgentDetailPage({ slug }) {
     try {
       const formData = new FormData();
       formData.append("deck", file);
-      const response = await fetch("/api/upload-deck", { method: "POST", body: formData });
+      const response = await fetch(getApiUrl("/api/upload-deck"), { method: "POST", body: formData });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Upload failed.");
       patchAgent(slug, (current) => ({
