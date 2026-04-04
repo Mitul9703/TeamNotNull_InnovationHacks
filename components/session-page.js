@@ -498,7 +498,7 @@ export function SessionPage({ slug }) {
 
       const socketUrl = `${
         window.location.protocol === "https:" ? "wss" : "ws"
-      }://${window.location.host}/api/live`;
+      }://${window.location.host}/api/live?agent=${encodeURIComponent(slug)}`;
       const socket = new WebSocket(socketUrl);
       browserSocketRef.current = socket;
       attachSocketHandlers(socket);

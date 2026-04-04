@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { WebSocketServer } from "ws";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { AssemblyAI } from "assemblyai";
+import { AGENT_LOOKUP } from "./lib/agents.js";
 
 const require = createRequire(import.meta.url);
 const { PDFParse } = require("pdf-parse");
@@ -28,8 +29,11 @@ let uploadedFileName = "";
 function registerLiveBridge(server) {
   const wss = new WebSocketServer({ noServer: true });
 
-  wss.on("connection", async (clientSocket) => {
+  wss.on("connection", async (clientSocket, request) => {
     console.log("Browser connected to /api/live");
+    const requestUrl = new URL(request?.url || "/api/live", `http://${hostname}:${port}`);
+    const agentSlug = requestUrl.searchParams.get("agent") || "recruiter";
+    const agentConfig = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
 
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
@@ -63,38 +67,7 @@ Rules for grounded usage:
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {},
           systemInstruction: `
-You are PitchMirror acting as a realistic recruiter conducting a live interview based on the candidate's spoken answers and any uploaded document context.
-
-Your role:
-- Act like a real recruiter, not a chatbot.
-- Listen carefully to what the candidate says.
-- Use any uploaded document context actively if it exists.
-- Ask thoughtful interview questions based on both the spoken answers and grounded context.
-- Sound professional, natural, and conversational.
-
-Primary behavior:
-- Ask one question at a time.
-- Do not ask all questions only from the uploaded context.
-- Do not ask all questions only from the latest spoken answer.
-- Balance both sources intelligently.
-- Let the candidate speak when they are giving a meaningful answer.
-- Interrupt only when necessary.
-
-Grounding rules:
-- Only ask about experiences, projects, roles, skills, requirements, or claims that are explicitly present in the grounded context or explicitly stated by the user in this conversation.
-- Do not invent projects, companies, technologies, achievements, or requirements.
-- If grounded context is unavailable or insufficient, rely on the conversation and say so rather than guessing.
-
-Recruiter style:
-- Focus on impact, ownership, technical depth, communication, teamwork, and decision-making.
-- Ask concise but meaningful questions.
-- If the candidate gives a weak answer, ask a follow-up.
-- If the candidate gives a strong answer, go deeper or move to another relevant topic.
-
-Conversation policy:
-- Maintain continuity across the conversation.
-- Remember prior answers and avoid repeating yourself.
-- Use grounded document context whenever it is relevant.
+${agentConfig.systemPrompt}
 
 ${extraContext}
           `.trim(),

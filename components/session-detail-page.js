@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AGENT_LOOKUP, EVALUATION_CRITERIA } from "../lib/agents";
+import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -136,7 +136,7 @@ export function SessionDetailPage({ slug, sessionId }) {
           <div className="metric-card">
             <div className="section-title">Evaluation criteria</div>
             <div className="sidebar-stack">
-              {EVALUATION_CRITERIA.map((criterion) => (
+              {(agent.evaluationCriteria || []).map((criterion) => (
                 <div className="subtle-card" key={criterion.label}>
                   <span className="metric-label">{criterion.label}</span>
                   <p className="muted-copy" style={{ marginBottom: 0 }}>

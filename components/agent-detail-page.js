@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { AGENT_LOOKUP, EVALUATION_CRITERIA } from "../lib/agents";
+import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -258,7 +258,7 @@ export function AgentDetailPage({ slug }) {
               This agent will score each saved session on the following dimensions after the evaluation pipeline finishes.
             </p>
             <div className="metrics-grid">
-              {EVALUATION_CRITERIA.map((criterion) => (
+              {(agent.evaluationCriteria || []).map((criterion) => (
                 <div className="subtle-card" key={criterion.label}>
                   <span className="metric-label">{criterion.label}</span>
                   <p className="muted-copy" style={{ marginBottom: 0 }}>
