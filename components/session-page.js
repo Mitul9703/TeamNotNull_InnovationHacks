@@ -191,6 +191,8 @@ export function SessionPage({ slug }) {
   const canScreenShare = slug !== "coding";
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
   const customContextText = agentState?.customContextText || "";
+  const companyUrl = agentState?.companyUrl || "";
+  const preparedCodingQuestion = agentState?.questionPrep?.result || null;
   const sessionName = agentState?.sessionName || "";
   const thread = (state.threads?.[slug] || []).find((item) => item.id === agentState.selectedThreadId) || null;
 
@@ -928,6 +930,8 @@ export function SessionPage({ slug }) {
           type: "session_context",
           customContext: customContextText,
           threadContext: thread?.memory?.hiddenGuidance || "",
+          companyUrl: isCodingAgent ? companyUrl : "",
+          codingQuestion: isCodingAgent ? preparedCodingQuestion : null,
           upload: upload?.contextText
             ? {
                 fileName: upload.fileName || "",
@@ -1287,6 +1291,8 @@ export function SessionPage({ slug }) {
         ? {
             language: codeLanguage,
             finalCode: codeDraft,
+            companyUrl: companyUrl.trim(),
+            interviewQuestion: preparedCodingQuestion,
           }
         : null,
       customContext: customContextText.trim(),
@@ -1310,6 +1316,11 @@ export function SessionPage({ slug }) {
           minute: "2-digit",
         }),
         lastDurationLabel: formatDuration(elapsed),
+      },
+      questionPrep: {
+        status: "idle",
+        result: null,
+        error: "",
       },
     }));
     router.replace(`/agents/${slug}?ended=1`);

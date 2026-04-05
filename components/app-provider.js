@@ -57,6 +57,12 @@ function buildInitialAgentState() {
       sessionName: "",
       threadName: "",
       customContextText: "",
+      companyUrl: "",
+      questionPrep: {
+        status: "idle",
+        result: null,
+        error: "",
+      },
       selectedThreadId: "",
       session: {
         status: "idle",
@@ -84,6 +90,13 @@ function buildPersistedAgents(agents) {
       },
       selectedThreadId: current.selectedThreadId || "",
       threadName: current.threadName || "",
+      customContextText: current.customContextText || "",
+      companyUrl: current.companyUrl || "",
+      questionPrep: {
+        status: current.questionPrep?.status || "idle",
+        result: current.questionPrep?.result || null,
+        error: current.questionPrep?.error || "",
+      },
       evaluation: {
         ...current.evaluation,
       },
@@ -135,6 +148,13 @@ function sanitizeState(state) {
       },
       selectedThreadId: saved.selectedThreadId || "",
       threadName: saved.threadName || "",
+      customContextText: saved.customContextText || "",
+      companyUrl: saved.companyUrl || "",
+      questionPrep: {
+        status: saved.questionPrep?.status || "idle",
+        result: saved.questionPrep?.result || null,
+        error: saved.questionPrep?.error || "",
+      },
       evaluation: {
         ...initial[agent.slug].evaluation,
         ...saved.evaluation,

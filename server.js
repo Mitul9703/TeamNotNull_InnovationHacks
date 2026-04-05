@@ -9,6 +9,10 @@ import { createRequire } from "node:module";
 import { WebSocketServer } from "ws";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { AssemblyAI } from "assemblyai";
+import { AIMessage } from "@langchain/core/messages";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { createAgent, tool } from "langchain";
+import { z } from "zod";
 import { AGENT_LOOKUP } from "./lib/agents.js";
 
 const require = createRequire(import.meta.url);
@@ -23,6 +27,25 @@ const port = Number(process.env.PORT || 3000);
 const nextApp = next({ dev, hostname, port });
 const handle = nextApp.getRequestHandler();
 const upload = multer({ dest: "uploads/" });
+
+const GEMINI_ENV_BY_TASK = {
+  live: ["GEMINI_LIVE_API_KEY", "GEMINI_API_KEY"],
+  questionFinder: ["GEMINI_QUESTION_FINDER_API_KEY", "GEMINI_API_KEY"],
+  evaluation: ["GEMINI_EVALUATION_API_KEY", "GEMINI_API_KEY"],
+  resources: ["GEMINI_RESOURCE_CURATION_API_KEY", "GEMINI_API_KEY"],
+  uploadPrep: ["GEMINI_UPLOAD_PREP_API_KEY", "GEMINI_API_KEY"],
+};
+
+function getGeminiApiKey(task) {
+  const candidates = GEMINI_ENV_BY_TASK[task] || ["GEMINI_API_KEY"];
+  for (const envName of candidates) {
+    const value = (process.env[envName] || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  throw new Error(`Missing Gemini API key for task "${task}". Checked: ${candidates.join(", ")}`);
+}
 
 const evaluationResponseSchema = {
   type: Type.OBJECT,
@@ -239,9 +262,18 @@ function buildTranscriptText(transcript) {
 function buildCodingContext(coding) {
   if (!coding) return "";
 
+  const question = coding.interviewQuestion?.markdown
+    ? `
+Prepared interview question:
+${coding.interviewQuestion.markdown}
+    `.trim()
+    : "";
+
   return `
 Coding session context:
 Selected language: ${coding.language || "Unspecified"}
+${coding.companyUrl ? `Target company URL: ${coding.companyUrl}\n` : ""}
+${question ? `${question}\n\n` : ""}
 
 Latest candidate code:
 ${coding.finalCode?.trim() || "No code was saved."}
@@ -416,6 +448,120 @@ function domainFromUrl(url) {
   }
 }
 
+function normalizeHttpUrl(rawUrl) {
+  const trimmed = (rawUrl || "").trim();
+  if (!trimmed) return "";
+
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(withProtocol);
+    return parsed.toString();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function companyNameFromUrl(rawUrl) {
+  const normalized = normalizeHttpUrl(rawUrl);
+  if (!normalized) return "";
+
+  try {
+    const { hostname } = new URL(normalized);
+    const cleaned = hostname
+      .replace(/^www\./, "")
+      .replace(/\.(com|ai|io|org|net|co|app|dev|jobs|careers)$/i, "");
+    return cleaned
+      .split(".")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  } catch (_error) {
+    return "";
+  }
+}
+
+function extractTextFromLangChainContent(content) {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part.text === "string") return part.text;
+        return "";
+      })
+      .join("\n");
+  }
+
+  if (content && typeof content.text === "string") {
+    return content.text;
+  }
+
+  return "";
+}
+
+function stripCodeFences(text) {
+  return (text || "")
+    .trim()
+    .replace(/^```markdown\s*/i, "")
+    .replace(/^```md\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function normalizeCodingQuestionMarkdown(rawText, companyUrl) {
+  const markdown = stripCodeFences(rawText);
+  if (!markdown) {
+    return null;
+  }
+
+  const titleMatch = markdown.match(/(?:^|\n)#{1,6}\s*(.+)/);
+  const sourceUrlMatch = markdown.match(/https?:\/\/[^\s)]+/i);
+
+  return {
+    companyName: companyNameFromUrl(companyUrl) || "",
+    title: (titleMatch?.[1] || "Company-specific coding question").trim(),
+    markdown,
+    sourceUrl: normalizeHttpUrl(sourceUrlMatch?.[0] || ""),
+  };
+}
+
+function hasGroundedProblemSignals(markdown = "", title = "") {
+  const text = `${title}\n${markdown}`.toLowerCase();
+  const signalChecks = [
+    /given\s+an?\s/,
+    /\binput\b/,
+    /\boutput\b/,
+    /\bexample\b/,
+    /\bconstraint/,
+    /\breturn\b/,
+    /\btest case/,
+  ];
+
+  const matchCount = signalChecks.reduce(
+    (count, pattern) => count + (pattern.test(text) ? 1 : 0),
+    0,
+  );
+
+  return matchCount >= 3;
+}
+
+function looksLikeWeakInterviewExperienceSource(url = "", title = "") {
+  const normalized = `${url} ${title}`.toLowerCase();
+  return (
+    normalized.includes("interview-experience") ||
+    normalized.includes("my-") ||
+    normalized.includes("experience") ||
+    normalized.includes("medium.com")
+  );
+}
+
 function normalizeFirecrawlCandidates(results, fallbackType) {
   return (results || [])
     .map((item) => ({
@@ -431,7 +577,7 @@ function normalizeFirecrawlCandidates(results, fallbackType) {
 
 async function curateResourceCandidates(brief, candidates) {
   const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
+    apiKey: getGeminiApiKey("resources"),
   });
 
   const prompt = `
@@ -539,6 +685,238 @@ async function fetchResourcesForBrief(brief) {
   return curated.slice(0, 4);
 }
 
+async function generateCodingQuestionFromCompany({
+  companyUrl,
+  customContext = "",
+  uploadContextText = "",
+}) {
+  const normalizedUrl = normalizeHttpUrl(companyUrl);
+
+  if (!normalizedUrl) {
+    throw new Error("A valid company URL is required.");
+  }
+
+  if (!process.env.FIRECRAWL_API_KEY) {
+    throw new Error("Missing FIRECRAWL_API_KEY.");
+  }
+
+  getGeminiApiKey("questionFinder");
+
+  const companyName = companyNameFromUrl(normalizedUrl) || "the target company";
+  const searchLogs = [];
+  const scrapeLogs = [];
+  const scrapeCache = new Map();
+  const searchTool = tool(
+    async ({ query, limit = 5 }) => {
+      const results = await searchFirecrawl(query, { limit });
+      const candidates = normalizeFirecrawlCandidates(results, "website")
+        .map((item) => ({
+          title: item.title,
+          url: item.url,
+          source: item.source,
+          snippet: item.snippet,
+          likelyWeakSource: looksLikeWeakInterviewExperienceSource(item.url, item.title),
+        }))
+        .slice(0, limit);
+
+      searchLogs.push({ query, candidates });
+      console.log("[coding-question] search", {
+        companyName,
+        query,
+        candidates: candidates.map((candidate) => ({
+          title: candidate.title,
+          url: candidate.url,
+          weak: candidate.likelyWeakSource,
+        })),
+      });
+
+      return JSON.stringify(candidates);
+    },
+    {
+      name: "search_web_for_coding_questions",
+      description:
+        "Search the public web for actual coding problem pages, company-tagged practice lists, or grounded sources that contain real coding question details. Use this before scraping.",
+      schema: z.object({
+        query: z.string().describe("A web search query focused on coding interview questions."),
+        limit: z.number().int().min(1).max(6).optional(),
+      }),
+    },
+  );
+
+  const scrapeTool = tool(
+    async ({ url }) => {
+      const normalizedTarget = normalizeHttpUrl(url);
+      if (!normalizedTarget) {
+        throw new Error("A valid URL is required for scraping.");
+      }
+
+      const scraped = await scrapeWithFirecrawl(normalizedTarget);
+      const payload = {
+        url: normalizedTarget,
+        title:
+          scraped?.metadata?.title ||
+          scraped?.metadata?.ogTitle ||
+          domainFromUrl(normalizedTarget),
+        markdown: (scraped?.markdown || "").slice(0, 9000),
+      };
+      const groundedProblemSignals = hasGroundedProblemSignals(
+        payload.markdown,
+        payload.title,
+      );
+      const weakSource = looksLikeWeakInterviewExperienceSource(
+        normalizedTarget,
+        payload.title,
+      );
+      const enrichedPayload = {
+        ...payload,
+        groundedProblemSignals,
+        weakSource,
+      };
+
+      scrapeCache.set(normalizedTarget, enrichedPayload);
+      scrapeLogs.push({
+        url: normalizedTarget,
+        title: enrichedPayload.title,
+        groundedProblemSignals,
+        weakSource,
+        preview: enrichedPayload.markdown.slice(0, 400),
+      });
+      console.log("[coding-question] scrape", {
+        url: normalizedTarget,
+        title: enrichedPayload.title,
+        groundedProblemSignals,
+        weakSource,
+        preview: enrichedPayload.markdown.slice(0, 220),
+      });
+
+      return JSON.stringify(enrichedPayload);
+    },
+    {
+      name: "scrape_coding_question_source",
+      description:
+        "Scrape one promising page to extract the grounded question text, examples, constraints, and supporting evidence. Use only on the most relevant URLs.",
+      schema: z.object({
+        url: z.string().describe("The URL of a promising source page to scrape."),
+      }),
+    },
+  );
+
+  const llm = new ChatGoogleGenerativeAI({
+    model: "gemini-2.5-flash",
+    temperature: 0.1,
+    maxRetries: 2,
+    apiKey: getGeminiApiKey("questionFinder"),
+  });
+
+  const codingQuestionAgent = createAgent({
+    model: llm,
+    tools: [searchTool, scrapeTool],
+    systemPrompt: `You are a careful research agent selecting exactly one grounded coding interview question for a live technical interview rehearsal.
+
+Workflow:
+- Search first for reputable public sources such as actual problem pages, company-tagged coding question lists, or well-known prep pages.
+- Prefer LeetCode problem pages, company-tagged question lists, NeetCode-style lists, or public pages that contain a full problem statement.
+- If you find an interview-experience page that only mentions a question title, topic, or data structure, do not stop there. Treat it as a clue and search again for the actual problem page or a canonical public source that contains the full problem statement.
+- If you find a company-tagged list page, use it as a directory and then scrape one of the actual linked problem pages rather than returning the list page itself.
+- If a clue page mentions a recognizable question title, search for that title directly and then scrape the actual problem page.
+- If a clue page mentions only a topic or pattern such as sliding window, graphs, two pointers, BFS, or hash maps, continue searching for the most plausible concrete question in that family for the target company and level.
+- Scrape the most promising one or two URLs to verify the question details.
+- Choose exactly one question that is plausible for an early-round coding screen and has enough detail to restate aloud.
+
+Selection rules:
+- Prefer simple to lower-medium questions over obscure or overly hard ones.
+- Prefer algorithmic coding questions, not system design or trivia.
+- Ground the final question only in scraped source material.
+- Strongly prefer pages that actually contain a problem statement, explicit examples, input/output, or constraints.
+- Do not use a source that merely says a topic was asked unless you use that clue to locate a real problem page or another public source with enough detail to reconstruct the question.
+- Avoid weak sources such as generic interview-experience blogs unless you can triangulate them into an actual problem page or enough concrete public detail to formulate the question.
+- If you have a strong clue about the question family or title and can find enough public detail to reconstruct one coherent coding problem with examples and constraints, do that.
+- Do not invent random questions unrelated to the evidence, but you may complete the final problem statement when the public evidence is strong enough to identify the underlying question.
+- You are required to return one final question. Keep searching and scraping until you can produce a plausible grounded question from the available evidence.
+- Return status "found" in normal operation. Use status "not_found" only if tool failure makes search impossible.
+- Keep examples, constraints, and test cases conservative and grounded in what you scraped.
+- Never return more than one question.
+
+Your final answer must be markdown only, with these sections in order:
+# Question Title
+## Difficulty
+## Why this question fits
+## Problem Statement
+## Examples
+## Constraints
+## Suggested Test Cases
+## Source
+## Evidence
+
+Requirements for the final markdown:
+- Do not wrap the answer in JSON.
+- Do not add any prose before or after the markdown brief.
+- The Source section must include at least one URL.
+- The Evidence section should quote or summarize the strongest grounded details you scraped.
+- The Problem Statement, examples, constraints, and test cases should be usable directly as hidden context for a live interviewer.`,
+  });
+
+  const prompt = `
+Target company URL: ${normalizedUrl}
+Target company name: ${companyName}
+
+Optional job-description or interview context:
+${customContext?.trim() || "None provided."}
+
+Optional uploaded document context:
+${uploadContextText?.trim() || "None provided."}
+
+Find one coding interview question that would be a good fit for a prototype live coding round for this company.
+Bias the search toward real coding problem sources such as LeetCode-style pages, company-tagged prep pages, and public problem statements with examples.
+Use the optional interview context to bias toward role-relevant topics and difficulty.
+Do not settle for a blog post that only mentions a topic. Use it as a lead, then find the real problem page or enough concrete public detail to formulate the question.
+You must return one final question for the session.
+Use the tools to search, inspect sources, and return a single grounded question with examples and test cases if available.
+  `.trim();
+
+  const result = await codingQuestionAgent.invoke({
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const finalMessage = Array.isArray(result?.messages)
+    ? [...result.messages].reverse().find((message) => message instanceof AIMessage)
+    : null;
+  const rawText = extractTextFromLangChainContent(finalMessage?.content || "");
+  console.log("[coding-question] final_raw", rawText);
+
+  const candidateQuestion = normalizeCodingQuestionMarkdown(rawText, normalizedUrl);
+  const scrapedSource = candidateQuestion?.sourceUrl
+    ? scrapeCache.get(candidateQuestion.sourceUrl)
+    : null;
+  console.log("[coding-question] parsed_candidate", {
+    title: candidateQuestion?.title || null,
+    sourceUrl: candidateQuestion?.sourceUrl || null,
+    hasScrapedSource: Boolean(scrapedSource),
+    groundedProblemSignals: scrapedSource?.groundedProblemSignals ?? null,
+    weakSource: scrapedSource?.weakSource ?? null,
+  });
+
+  const question = candidateQuestion || null;
+
+  console.log("[coding-question] generated", {
+    companyUrl: normalizedUrl,
+    companyName,
+    found: Boolean(question),
+    title: question?.title || null,
+    sourceUrl: question?.sourceUrl || null,
+    validation: scrapedSource
+      ? {
+          groundedProblemSignals: scrapedSource.groundedProblemSignals,
+          weakSource: scrapedSource.weakSource,
+        }
+      : null,
+    searchesRun: searchLogs.length,
+    scrapesRun: scrapeLogs.length,
+  });
+
+  return question;
+}
+
 function registerLiveBridge(server) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -550,7 +928,7 @@ function registerLiveBridge(server) {
     const agentConfig = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
 
     const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey: getGeminiApiKey("live"),
     });
     const assembly = process.env.ASSEMBLYAI_API_KEY
       ? new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY })
@@ -567,6 +945,8 @@ function registerLiveBridge(server) {
     let sessionThreadContext = "";
     let sessionUploadContextText = "";
     let sessionUploadFileName = "";
+    let sessionCompanyUrl = "";
+    let sessionCodingQuestion = null;
 
     function sendKickoff(text) {
       const kickoffText = (text || "").trim();
@@ -614,6 +994,21 @@ ${agentSlug === "coding"
   : ""}
 `
         : "";
+      const preparedCodingQuestionContext =
+        agentSlug === "coding" && sessionCodingQuestion
+          ? `
+
+Prepared coding interview problem for this session:
+Company URL: ${sessionCompanyUrl || "Not provided"}
+${sessionCodingQuestion.markdown || "No grounded problem brief was available."}
+
+Grounding rules for this problem:
+- Use this exact prepared problem as the interview question for this session.
+- Do not replace it with another question.
+- You may restate it naturally aloud, but stay faithful to these grounded details.
+- Do not mention the background research process unless the candidate explicitly asks.
+`
+          : "";
       const hiddenThreadContext = sessionThreadContext
         ? `
 
@@ -646,6 +1041,8 @@ ${agentConfig.systemPrompt}
 ${customTextContext}
 
 ${hiddenThreadContext}
+
+${preparedCodingQuestionContext}
 
 ${extraContext}
           `.trim(),
@@ -774,12 +1171,16 @@ ${extraContext}
           sessionThreadContext = (msg.threadContext || "").trim();
           sessionUploadContextText = (msg.upload?.contextText || "").trim();
           sessionUploadFileName = (msg.upload?.fileName || "").trim();
+          sessionCompanyUrl = (msg.companyUrl || "").trim();
+          sessionCodingQuestion = msg.codingQuestion || null;
           console.log("[live] session_context", {
             agentSlug,
             hasCustomContext: Boolean(sessionCustomContext),
             hasThreadContext: Boolean(sessionThreadContext),
             threadContextPreview: sessionThreadContext.slice(0, 240),
             uploadFileName: sessionUploadFileName || null,
+            hasCodingQuestion: Boolean(sessionCodingQuestion),
+            companyUrl: sessionCompanyUrl || null,
           });
 
           try {
@@ -1004,7 +1405,7 @@ async function startServer() {
       }
 
       const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: getGeminiApiKey("uploadPrep"),
       });
 
       const prepResponse = await ai.models.generateContent({
@@ -1051,6 +1452,41 @@ ${rawText}`,
     }
   });
 
+  app.post("/api/company-coding-question", async (req, res) => {
+    try {
+      const { companyUrl, customContext, upload } = req.body || {};
+      const normalizedUrl = normalizeHttpUrl(companyUrl);
+
+      if (!normalizedUrl) {
+        return res.json({
+          ok: true,
+          question: null,
+          message: "No valid company URL was provided.",
+        });
+      }
+
+      const question = await generateCodingQuestionFromCompany({
+        companyUrl: normalizedUrl,
+        customContext: (customContext || "").trim(),
+        uploadContextText: (upload?.contextText || "").trim(),
+      });
+
+      return res.json({
+        ok: true,
+        question,
+        message: question
+          ? "Company-specific coding question fetched."
+          : "No grounded company-specific question could be confirmed.",
+      });
+    } catch (error) {
+      console.error("Coding question generation error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch a company-specific coding question.",
+        details: error.message,
+      });
+    }
+  });
+
   app.post("/api/evaluate-session", async (req, res) => {
     try {
       const {
@@ -1089,7 +1525,7 @@ ${rawText}`,
         : "No additional text context was provided for this session.";
 
       const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: getGeminiApiKey("evaluation"),
       });
 
       const evaluationPrompt = `
@@ -1220,7 +1656,7 @@ ${sessionDigest}
       `.trim();
 
       const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: getGeminiApiKey("evaluation"),
       });
 
       const response = await ai.models.generateContent({
@@ -1276,7 +1712,7 @@ ${sessionDigest}
         .join("\n");
 
       const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: getGeminiApiKey("evaluation"),
       });
 
       const comparisonPrompt = `

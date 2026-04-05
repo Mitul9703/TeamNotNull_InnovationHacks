@@ -178,6 +178,25 @@ export function SessionDetailPage({ slug, sessionId }) {
             <p className="muted-copy" style={{ marginTop: 0, marginBottom: 12, fontSize: "0.9rem" }}>
               Language: {session.coding.language || "Unspecified"}
             </p>
+            {session.coding.companyUrl ? (
+              <div className="subtle-card" style={{ marginBottom: 12 }}>
+                <span className="metric-label">Company URL</span>
+                <div style={{ fontWeight: 600, wordBreak: "break-word" }}>{session.coding.companyUrl}</div>
+              </div>
+            ) : null}
+            {session.coding.interviewQuestion ? (
+              <div className="subtle-card" style={{ marginBottom: 12 }}>
+                <div className="section-title" style={{ fontSize: "0.9rem" }}>
+                  Interview question
+                </div>
+                <p className="muted-copy" style={{ margin: "6px 0 0", fontSize: "0.9rem" }}>
+                  <strong>{session.coding.interviewQuestion.title || "Curated coding question"}</strong>
+                </p>
+                <pre className="code-block" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+                  {session.coding.interviewQuestion.markdown || "No grounded problem brief was saved."}
+                </pre>
+              </div>
+            ) : null}
             <div className="subtle-card">
               <div className="section-title" style={{ fontSize: "0.9rem" }}>Final code</div>
               <pre className="code-block">{session.coding.finalCode || "// No code was saved."}</pre>

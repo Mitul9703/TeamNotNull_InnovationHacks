@@ -71,6 +71,7 @@ export function AgentDetailPage({ slug }) {
 
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
+  const questionPrep = agentState?.questionPrep || { status: "idle", result: null, error: "" };
   const threads = state.threads?.[slug] || [];
   const selectedThread = threads.find((thread) => thread.id === agentState.selectedThreadId) || null;
   const pastSessions = state.sessions?.[slug] || [];
@@ -127,7 +128,7 @@ export function AgentDetailPage({ slug }) {
     }
   }
 
-  function startSession() {
+  async function startSession() {
     if (!agentState.sessionName?.trim()) {
       setLocalError("Session name is required.");
       return;
@@ -141,7 +142,69 @@ export function AgentDetailPage({ slug }) {
     patchAgent(slug, (current) => ({
       ...current,
       session: { ...current.session, status: "starting" },
+      questionPrep: slug === "coding"
+        ? { status: "idle", result: null, error: "" }
+        : current.questionPrep,
     }));
+
+    if (slug === "coding") {
+      const companyUrl = (agentState.companyUrl || "").trim();
+
+      if (companyUrl) {
+        patchAgent(slug, (current) => ({
+          ...current,
+          questionPrep: {
+            status: "loading",
+            result: null,
+            error: "",
+          },
+        }));
+
+        try {
+          const response = await fetch(getApiUrl("/api/company-coding-question"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              companyUrl,
+              customContext: agentState.customContextText || "",
+              upload: upload?.contextText
+                ? {
+                    fileName: upload.fileName || "",
+                    contextText: upload.contextText,
+                  }
+                : null,
+            }),
+          });
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to fetch a company-specific coding question.");
+          }
+
+          patchAgent(slug, (current) => ({
+            ...current,
+            questionPrep: {
+              status: payload.question ? "ready" : "idle",
+              result: payload.question || null,
+              error: payload.question ? "" : payload.message || "",
+            },
+          }));
+        } catch (error) {
+          patchAgent(slug, (current) => ({
+            ...current,
+            questionPrep: {
+              status: "failed",
+              result: null,
+              error: error.message || "Could not fetch a company-specific question.",
+            },
+          }));
+        }
+      }
+    }
+
     router.push(`/session/${slug}`);
   }
 
@@ -359,6 +422,41 @@ export function AgentDetailPage({ slug }) {
                 disabled={agentState.session.status === "active" || agentState.session.status === "starting"}
                 style={{ minHeight: 120, flex: 1 }}
               />
+
+              {slug === "coding" && (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <span className="metric-label" style={{ marginBottom: 0 }}>
+                    Company URL
+                  </span>
+                  <input
+                    className="context-textarea"
+                    type="text"
+                    value={agentState.companyUrl || ""}
+                    onChange={(event) =>
+                      patchAgent(slug, (current) => ({
+                        ...current,
+                        companyUrl: event.target.value,
+                        questionPrep: current.questionPrep?.status === "loading"
+                          ? current.questionPrep
+                          : { status: "idle", result: null, error: "" },
+                      }))
+                    }
+                    placeholder="Optional · e.g. https://www.google.com or https://careers.airbnb.com"
+                    disabled={agentState.session.status === "active" || agentState.session.status === "starting"}
+                    style={{ minHeight: 52, resize: "none" }}
+                  />
+                  <p className="muted-copy" style={{ margin: 0, fontSize: "0.84rem" }}>
+                    If provided, PitchMirror will fetch one grounded company-style coding question before the session starts.
+                  </p>
+
+                  {questionPrep.status === "failed" && questionPrep.error ? (
+                    <div className="status-chip status-warning">
+                      <span className="status-dot" />
+                      {questionPrep.error} The session can still continue with the default coding flow.
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             {/* Right: file upload */}
@@ -457,12 +555,21 @@ export function AgentDetailPage({ slug }) {
           >
             {upload.status === "uploading" ? (
               <><div className="spinner spinner-sm spinner-inline" />Preparing upload…</>
+            ) : slug === "coding" && questionPrep.status === "loading" ? (
+              <><div className="spinner spinner-sm spinner-inline" />Fetching company questions…</>
             ) : agentState.session.status === "starting" ? (
               <><div className="spinner spinner-sm spinner-inline" />Starting session…</>
             ) : (
               "Start Session"
             )}
           </button>
+
+          {slug === "coding" && questionPrep.status === "loading" ? (
+            <div className="status-chip status-warning" style={{ marginTop: 12, width: "fit-content" }}>
+              <div className="spinner spinner-xs" style={{ margin: 0 }} />
+              Finding a company-specific coding question…
+            </div>
+          ) : null}
         </div>
 
         {/* Past sessions */}
