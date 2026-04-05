@@ -24,6 +24,14 @@ function buildDefaultComparison() {
   };
 }
 
+function buildDefaultThreadEvaluation() {
+  return {
+    status: "idle",
+    result: null,
+    error: "",
+  };
+}
+
 function buildDefaultEvaluation(agent) {
   return {
     score: 0,
@@ -47,7 +55,9 @@ function buildInitialAgentState() {
         error: "",
       },
       sessionName: "",
+      threadName: "",
       customContextText: "",
+      selectedThreadId: "",
       session: {
         status: "idle",
         muted: false,
@@ -72,6 +82,8 @@ function buildPersistedAgents(agents) {
         lastEndedAt: current.session?.lastEndedAt || "",
         lastDurationLabel: current.session?.lastDurationLabel || "00:00",
       },
+      selectedThreadId: current.selectedThreadId || "",
+      threadName: current.threadName || "",
       evaluation: {
         ...current.evaluation,
       },
@@ -88,14 +100,23 @@ function buildInitialSessions() {
   }, {});
 }
 
+function buildInitialThreads() {
+  return AGENTS.reduce((acc, agent) => {
+    acc[agent.slug] = [];
+    return acc;
+  }, {});
+}
+
 function sanitizeState(state) {
   const initial = buildInitialAgentState();
+  const threads = buildInitialThreads();
   const sessions = buildInitialSessions();
 
   if (!state || typeof state !== "object") {
     return {
       theme: "dark",
       agents: initial,
+      threads,
       sessions,
     };
   }
@@ -112,12 +133,31 @@ function sanitizeState(state) {
         ...initial[agent.slug].session,
         ...saved.session,
       },
+      selectedThreadId: saved.selectedThreadId || "",
+      threadName: saved.threadName || "",
       evaluation: {
         ...initial[agent.slug].evaluation,
         ...saved.evaluation,
       },
       rating: saved.rating || 0,
     };
+  }
+
+  for (const agent of AGENTS) {
+    const savedThreads = Array.isArray(state.threads?.[agent.slug])
+      ? state.threads[agent.slug]
+      : [];
+    threads[agent.slug] = savedThreads.map((thread) => ({
+      ...thread,
+      sessionIds: Array.isArray(thread.sessionIds) ? thread.sessionIds : [],
+      evaluation: thread.evaluation || buildDefaultThreadEvaluation(),
+      memory: thread.memory || {
+        hiddenGuidance: "",
+        summary: "",
+        focusAreas: [],
+        updatedAt: "",
+      },
+    }));
   }
 
   for (const agent of AGENTS) {
@@ -140,12 +180,14 @@ function sanitizeState(state) {
         error: "",
       },
       comparison: session.comparison || buildDefaultComparison(),
+      threadId: session.threadId || "",
     }));
   }
 
   return {
     theme: state.theme === "light" ? "light" : "dark",
     agents: initial,
+    threads,
     sessions,
   };
 }
@@ -213,6 +255,7 @@ export function AppProvider({ children }) {
     sanitizeState({
       theme: "dark",
       agents: buildInitialAgentState(),
+      threads: buildInitialThreads(),
       sessions: buildInitialSessions(),
     }),
   );
@@ -221,6 +264,7 @@ export function AppProvider({ children }) {
   const evaluationJobsRef = useRef(new Map());
   const resourceJobsRef = useRef(new Map());
   const comparisonJobsRef = useRef(new Map());
+  const threadJobsRef = useRef(new Map());
 
   const dismissToast = useCallback((id) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -276,6 +320,68 @@ export function AppProvider({ children }) {
     }));
   }, []);
 
+  const patchThread = useCallback((slug, threadId, updater) => {
+    setState((current) => ({
+      ...current,
+      threads: {
+        ...current.threads,
+        [slug]: (current.threads[slug] || []).map((thread) =>
+          thread.id === threadId ? updater(thread) : thread,
+        ),
+      },
+    }));
+  }, []);
+
+  const createThread = useCallback((slug, title) => {
+    const now = new Date().toISOString();
+    const thread = {
+      id: `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      agentSlug: slug,
+      title: (title || "").trim() || `${AGENTS.find((agent) => agent.slug === slug)?.name || "Practice"} thread`,
+      createdAt: now,
+      updatedAt: now,
+      sessionIds: [],
+      evaluation: buildDefaultThreadEvaluation(),
+      memory: {
+        hiddenGuidance: "",
+        summary: "",
+        focusAreas: [],
+        updatedAt: "",
+      },
+    };
+
+    setState((current) => ({
+      ...current,
+      agents: {
+        ...current.agents,
+        [slug]: {
+          ...current.agents[slug],
+          selectedThreadId: thread.id,
+          threadName: "",
+        },
+      },
+      threads: {
+        ...current.threads,
+        [slug]: [thread, ...(current.threads[slug] || [])],
+      },
+    }));
+
+    return thread;
+  }, []);
+
+  const selectThread = useCallback((slug, threadId) => {
+    setState((current) => ({
+      ...current,
+      agents: {
+        ...current.agents,
+        [slug]: {
+          ...current.agents[slug],
+          selectedThreadId: threadId,
+        },
+      },
+    }));
+  }, []);
+
   const clearAgentSessions = useCallback(
     (slug) => {
       const sessionsToClear = state.sessions?.[slug] || [];
@@ -301,15 +407,35 @@ export function AppProvider({ children }) {
         }
       });
 
+      (state.threads?.[slug] || []).forEach((thread) => {
+        const key = `${slug}:${thread.id}`;
+        const threadController = threadJobsRef.current.get(key);
+        if (threadController) {
+          threadController.abort();
+          threadJobsRef.current.delete(key);
+        }
+      });
+
       setState((current) => ({
         ...current,
+        agents: {
+          ...current.agents,
+          [slug]: {
+            ...current.agents[slug],
+            selectedThreadId: "",
+          },
+        },
+        threads: {
+          ...current.threads,
+          [slug]: [],
+        },
         sessions: {
           ...current.sessions,
           [slug]: [],
         },
       }));
     },
-    [state.sessions],
+    [state.sessions, state.threads],
   );
 
   const runResourceJob = useCallback(
@@ -398,6 +524,116 @@ export function AppProvider({ children }) {
       }
     },
     [patchSession, pushToast],
+  );
+
+  const runThreadEvaluationJob = useCallback(
+    async (slug, threadId) => {
+      const jobKey = `${slug}:${threadId}`;
+      if (threadJobsRef.current.has(jobKey)) {
+        return;
+      }
+
+      const thread = (state.threads?.[slug] || []).find((item) => item.id === threadId);
+      if (!thread) {
+        return;
+      }
+
+      const threadSessions = (state.sessions?.[slug] || [])
+        .filter((session) => session.threadId === threadId)
+        .sort((a, b) => new Date(a.endedAt).getTime() - new Date(b.endedAt).getTime());
+
+      const completedSessions = threadSessions.filter(
+        (session) => session.evaluation?.status === "completed" && session.evaluation?.result,
+      );
+
+      if (!completedSessions.length) {
+        return;
+      }
+
+      const abortController = new AbortController();
+      threadJobsRef.current.set(jobKey, abortController);
+
+      patchThread(slug, threadId, (currentThread) => ({
+        ...currentThread,
+        updatedAt: new Date().toISOString(),
+        evaluation: {
+          ...currentThread.evaluation,
+          status: "processing",
+          startedAt: currentThread.evaluation?.startedAt || new Date().toISOString(),
+          error: "",
+        },
+      }));
+
+      try {
+        const response = await fetch(getApiUrl("/api/evaluate-thread"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentSlug: slug,
+            thread: {
+              id: thread.id,
+              title: thread.title,
+              createdAt: thread.createdAt,
+              updatedAt: thread.updatedAt,
+            },
+            sessions: completedSessions.map((session) => ({
+              id: session.id,
+              sessionName: session.sessionName,
+              startedAt: session.startedAt,
+              endedAt: session.endedAt,
+              durationLabel: session.durationLabel,
+              transcript: session.transcript || [],
+              upload: session.upload || null,
+              coding: session.coding || null,
+              customContext: session.customContext || "",
+              evaluation: session.evaluation.result,
+            })),
+          }),
+          signal: abortController.signal,
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to evaluate thread.");
+        }
+
+        patchThread(slug, threadId, (currentThread) => ({
+          ...currentThread,
+          updatedAt: new Date().toISOString(),
+          memory: {
+            hiddenGuidance: payload.threadEvaluation?.hiddenGuidance || "",
+            summary: payload.threadEvaluation?.summary || "",
+            focusAreas: payload.threadEvaluation?.focusAreas || [],
+            updatedAt: new Date().toISOString(),
+          },
+          evaluation: {
+            status: "completed",
+            completedAt: new Date().toISOString(),
+            result: payload.threadEvaluation,
+            error: "",
+          },
+        }));
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        patchThread(slug, threadId, (currentThread) => ({
+          ...currentThread,
+          evaluation: {
+            ...currentThread.evaluation,
+            status: "failed",
+            failedAt: new Date().toISOString(),
+            error: error.message || "Thread evaluation failed.",
+          },
+        }));
+      } finally {
+        threadJobsRef.current.delete(jobKey);
+      }
+    },
+    [patchThread, state.sessions, state.threads],
   );
 
   const runEvaluationJob = useCallback(
@@ -632,6 +868,7 @@ export function AppProvider({ children }) {
       JSON.stringify({
         theme: state.theme,
         agents: buildPersistedAgents(state.agents),
+        threads: state.threads,
         sessions: state.sessions,
       }),
     );
@@ -647,6 +884,12 @@ export function AppProvider({ children }) {
     if (!mounted) return;
 
     AGENTS.forEach((agent) => {
+      (state.threads[agent.slug] || []).forEach((thread) => {
+        if (thread.evaluation?.status === "processing") {
+          void runThreadEvaluationJob(agent.slug, thread.id);
+        }
+      });
+
       (state.sessions[agent.slug] || []).forEach((session) => {
         if (session.evaluation?.status === "processing") {
           void runEvaluationJob(session);
@@ -662,7 +905,7 @@ export function AppProvider({ children }) {
         }
       });
     });
-  }, [mounted, runComparisonJob, runEvaluationJob, runResourceJob, state.sessions]);
+  }, [mounted, runComparisonJob, runEvaluationJob, runResourceJob, runThreadEvaluationJob, state.sessions, state.threads]);
 
   useEffect(() => {
     return () => {
@@ -678,6 +921,10 @@ export function AppProvider({ children }) {
         controller.abort();
       }
       comparisonJobsRef.current.clear();
+      for (const controller of threadJobsRef.current.values()) {
+        controller.abort();
+      }
+      threadJobsRef.current.clear();
     };
   }, []);
 
@@ -702,6 +949,23 @@ export function AppProvider({ children }) {
 
       setState((current) => ({
         ...current,
+        threads: {
+          ...current.threads,
+          [session.agentSlug]: (current.threads[session.agentSlug] || []).map((thread) =>
+            thread.id === session.threadId
+              ? {
+                  ...thread,
+                  updatedAt: session.endedAt,
+                  sessionIds: [session.id, ...(thread.sessionIds || [])],
+                  evaluation: {
+                    ...thread.evaluation,
+                    status: "processing",
+                    error: "",
+                  },
+                }
+              : thread,
+          ),
+        },
         sessions: {
           ...current.sessions,
           [session.agentSlug]: [sessionRecord, ...(current.sessions[session.agentSlug] || [])],
@@ -721,10 +985,14 @@ export function AppProvider({ children }) {
       setTheme,
       patchAgent,
       patchSession,
+      patchThread,
       clearAgentSessions,
       requestResourceFetch,
       requestSessionComparison,
       createSessionRecord,
+      createThread,
+      selectThread,
+      runThreadEvaluationJob,
       dismissToast,
       toasts,
     }),
@@ -734,11 +1002,15 @@ export function AppProvider({ children }) {
       mounted,
       patchAgent,
       patchSession,
+      patchThread,
       clearAgentSessions,
       requestResourceFetch,
       requestSessionComparison,
       setTheme,
       state,
+      createThread,
+      selectThread,
+      runThreadEvaluationJob,
       toasts,
     ],
   );

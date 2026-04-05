@@ -155,6 +155,14 @@ export function SessionDetailPage({ slug, sessionId }) {
               <div style={{ fontWeight: 600 }}>{session.upload?.fileName || "No file"}</div>
             </div>
           </div>
+          {session.threadId ? (
+            <div className="subtle-card" style={{ marginTop: 12 }}>
+              <span className="metric-label">Thread</span>
+              <Link href={`/agents/${slug}/threads/${session.threadId}`} className="link-button" style={{ marginTop: 6 }}>
+                Open thread view
+              </Link>
+            </div>
+          ) : null}
           {session.customContext && (
             <div className="subtle-card" style={{ marginTop: 12 }}>
               <span className="metric-label">Extra context</span>

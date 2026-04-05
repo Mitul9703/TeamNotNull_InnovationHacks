@@ -62,7 +62,7 @@ function ContextPreviewToggle({ preview }) {
 export function AgentDetailPage({ slug }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state, patchAgent, clearAgentSessions } = useAppState();
+  const { state, patchAgent, clearAgentSessions, createThread, selectThread } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const [localError, setLocalError] = useState("");
   const [criteriaExpanded, setCriteriaExpanded] = useState(false);
@@ -71,15 +71,18 @@ export function AgentDetailPage({ slug }) {
 
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
+  const threads = state.threads?.[slug] || [];
+  const selectedThread = threads.find((thread) => thread.id === agentState.selectedThreadId) || null;
   const pastSessions = state.sessions?.[slug] || [];
 
   const canStart = useMemo(() => {
     return (
       upload.status !== "uploading" &&
       agentState.session.status !== "starting" &&
+      Boolean(agentState.selectedThreadId) &&
       Boolean(agentState.sessionName?.trim())
     );
-  }, [agentState.session.status, agentState.sessionName, upload.status]);
+  }, [agentState.selectedThreadId, agentState.session.status, agentState.sessionName, upload.status]);
 
   if (!agent || !agentState) {
     return (
@@ -129,6 +132,10 @@ export function AgentDetailPage({ slug }) {
       setLocalError("Session name is required.");
       return;
     }
+    if (!agentState.selectedThreadId) {
+      setLocalError("Create a new thread or continue an existing one first.");
+      return;
+    }
     if (!canStart) return;
     setLocalError("");
     patchAgent(slug, (current) => ({
@@ -140,6 +147,16 @@ export function AgentDetailPage({ slug }) {
 
   const criteria = agent.evaluationCriteria || [];
   const visibleCriteria = criteriaExpanded ? criteria : criteria.slice(0, 4);
+
+  function handleCreateThread() {
+    if (!agentState.threadName?.trim()) {
+      setLocalError("Thread name is required.");
+      return null;
+    }
+    const thread = createThread(slug, agentState.threadName);
+    setLocalError("");
+    return thread;
+  }
 
   return (
     <AppShell>
@@ -201,8 +218,95 @@ export function AgentDetailPage({ slug }) {
           )}
         </div>
 
+        <div className="section-divider">Choose a thread</div>
+
+        <div className="metric-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <div>
+              <div className="section-title" style={{ marginBottom: 4 }}>Threads</div>
+              <p className="muted-copy" style={{ margin: 0 }}>
+                Start a new thread or continue an existing one. Sessions inside a thread build on prior performance internally.
+              </p>
+            </div>
+            <button type="button" className="btn btn-primary" onClick={handleCreateThread}>
+              New thread
+            </button>
+          </div>
+
+          <div className="subtle-card" style={{ marginBottom: 14 }}>
+            <span className="metric-label" style={{ marginBottom: 8 }}>New thread name</span>
+            <input
+              className="context-textarea"
+              type="text"
+              value={agentState.threadName || ""}
+              onChange={(event) => {
+                setLocalError("");
+                patchAgent(slug, (current) => ({ ...current, threadName: event.target.value }));
+              }}
+              placeholder={`e.g. ${agent.name} weekly practice`}
+              style={{ minHeight: 50, resize: "none" }}
+            />
+            {!agentState.threadName?.trim() && (
+              <p className="muted-copy" style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--danger)" }}>
+                Required to create a new thread.
+              </p>
+            )}
+          </div>
+
+          {selectedThread ? (
+            <div className="subtle-card" style={{ marginBottom: 14 }}>
+              <div className="metric-label">Selected thread</div>
+              <div style={{ fontWeight: 600 }}>{selectedThread.title}</div>
+              <p className="muted-copy" style={{ margin: "6px 0 0", fontSize: "0.86rem" }}>
+                {selectedThread.sessionIds?.length || 0} session{(selectedThread.sessionIds?.length || 0) === 1 ? "" : "s"} in this thread
+              </p>
+            </div>
+          ) : null}
+
+          {threads.length === 0 ? (
+            <div className="empty-state">
+              No threads yet. Create a new one to begin.
+            </div>
+          ) : (
+            <div className="sidebar-stack">
+              {threads.map((thread) => (
+                <div className="session-list-item" key={thread.id}>
+                  <div className="session-list-top">
+                    <strong>{thread.title}</strong>
+                    <span className="pill">{thread.sessionIds?.length || 0} sessions</span>
+                  </div>
+                  <p className="muted-copy" style={{ margin: "6px 0 0", fontSize: "0.85rem" }}>
+                    Updated {new Date(thread.updatedAt).toLocaleString()}
+                  </p>
+                  {thread.evaluation?.status === "completed" && thread.evaluation?.result?.summary ? (
+                    <p className="muted-copy" style={{ margin: "6px 0 0", fontSize: "0.85rem" }}>
+                      {thread.evaluation.result.summary}
+                    </p>
+                  ) : null}
+                  <div className="button-row" style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className={thread.id === agentState.selectedThreadId ? "btn btn-primary" : "btn btn-secondary"}
+                      onClick={() => {
+                        setLocalError("");
+                        selectThread(slug, thread.id);
+                        patchAgent(slug, (current) => ({ ...current, threadName: "" }));
+                      }}
+                    >
+                      {thread.id === agentState.selectedThreadId ? "Selected" : "Continue thread"}
+                    </button>
+                    <Link href={`/agents/${slug}/threads/${thread.id}`} className="btn btn-secondary">
+                      Open thread
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Divider */}
-        <div className="section-divider">Create a new session</div>
+        <div className="section-divider">Start a session in this thread</div>
 
         {/* Session name card */}
         <div className="metric-card">
@@ -223,6 +327,11 @@ export function AgentDetailPage({ slug }) {
           {!agentState.sessionName?.trim() && (
             <p className="muted-copy" style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--danger)" }}>
               Required to start a session.
+            </p>
+          )}
+          {!agentState.selectedThreadId && (
+            <p className="muted-copy" style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--danger)" }}>
+              Select or create a thread before starting.
             </p>
           )}
         </div>

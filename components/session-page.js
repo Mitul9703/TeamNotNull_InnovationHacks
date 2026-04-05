@@ -192,6 +192,7 @@ export function SessionPage({ slug }) {
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
   const customContextText = agentState?.customContextText || "";
   const sessionName = agentState?.sessionName || "";
+  const thread = (state.threads?.[slug] || []).find((item) => item.id === agentState.selectedThreadId) || null;
 
   const [permissionState, setPermissionState] = useState("pending");
   const [sessionPhase, setSessionPhase] = useState("preflight");
@@ -298,6 +299,20 @@ export function SessionPage({ slug }) {
     }));
     router.replace(`/agents/${slug}`);
   }, [agent, agentState, patchAgent, router, sessionName, slug]);
+
+  useEffect(() => {
+    if (!agent || !agentState) return;
+    if (thread) return;
+
+    patchAgent(slug, (current) => ({
+      ...current,
+      session: {
+        ...current.session,
+        status: "idle",
+      },
+    }));
+    router.replace(`/agents/${slug}`);
+  }, [agent, agentState, patchAgent, router, slug, thread]);
 
   useEffect(() => {
     if (!agent || !agentState) return undefined;
@@ -912,6 +927,7 @@ export function SessionPage({ slug }) {
         JSON.stringify({
           type: "session_context",
           customContext: customContextText,
+          threadContext: thread?.memory?.hiddenGuidance || "",
           upload: upload?.contextText
             ? {
                 fileName: upload.fileName || "",
@@ -1255,6 +1271,7 @@ export function SessionPage({ slug }) {
       agentSlug: slug,
       agentName: agent.name,
       sessionName: sessionName.trim(),
+      threadId: thread.id,
       startedAt: new Date(now.getTime() - elapsed * 1000).toISOString(),
       endedAt: now.toISOString(),
       durationLabel: formatDuration(elapsed),
@@ -1328,7 +1345,10 @@ export function SessionPage({ slug }) {
             <div className="brand-mark">PM</div>
             <div>
               <div className="brand-title">{agent.name}</div>
-              <div className="brand-subtitle">{agent.scenario}</div>
+              <div className="brand-subtitle">
+                {agent.scenario}
+                {thread ? ` · ${thread.title}` : ""}
+              </div>
             </div>
           </div>
           <div className="footer-cluster">
