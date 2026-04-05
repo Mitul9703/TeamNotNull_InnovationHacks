@@ -30,8 +30,8 @@ export function LandingPage() {
           Rehearse the room before you ever walk into it.
         </h1>
         <p className="hero-copy">
-          PitchMirror pairs live Simli avatars with role-specific coaching
-          surfaces so you can practice interviews, lectures, startup pitches,
+          PitchMirror pairs with role-specific coaching
+          surfaces so you can practice interviews, project presentations, startup pitches,
           and high-pressure Q&amp;A in one calm workspace.
         </p>
         <div className="hero-cta-centered">
