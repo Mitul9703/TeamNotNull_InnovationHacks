@@ -779,16 +779,14 @@ ${extraContext}
           if (msg.active) {
             session.sendRealtimeInput({
               text:
-                `The founder has started sharing a live product demo from a ${surface}. ` +
-                "Use what is visibly shown as passive visual context only. " +
-                "Ask realistic investor questions about clarity, differentiation, usability, GTM implications, monetization implications, and whether the demo supports the spoken pitch. " +
-                "Do not claim to click, inspect hidden state, or see anything outside the visible screen frames. " +
-                "Do not interrupt for routine navigation moments unless there is a meaningful investor question to ask.",
+                `The user has started sharing a live ${surface}. ` +
+                (agentConfig.screenShareInstruction ||
+                  "Use what is visibly shown as passive visual context only. Ask grounded questions about the visible material and how it supports what the user is saying. Do not claim to click, inspect hidden state, or see anything outside the visible screen frames. Do not interrupt for routine navigation."),
             });
           } else {
             session.sendRealtimeInput({
               text:
-                "The live product demo is no longer being shared. Continue the investor conversation using only the spoken discussion and any grounded context already provided.",
+                "The live screen share has ended. Continue the conversation using only the spoken discussion and any grounded context already provided.",
             });
           }
         }

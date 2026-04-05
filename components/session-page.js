@@ -188,7 +188,7 @@ export function SessionPage({ slug }) {
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
   const isCodingAgent = slug === "coding";
-  const isInvestorAgent = slug === "investor";
+  const canScreenShare = slug !== "coding";
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
   const customContextText = agentState?.customContextText || "";
   const sessionName = agentState?.sessionName || "";
@@ -396,7 +396,7 @@ export function SessionPage({ slug }) {
 
   async function openPipWindow() {
     if (
-      !isInvestorAgent ||
+      !canScreenShare ||
       screenShareState.status !== "active" ||
       sessionPhase !== "live" ||
       typeof window === "undefined" ||
@@ -478,7 +478,7 @@ export function SessionPage({ slug }) {
         }
         .pip-actions {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: 1fr;
           gap: 10px;
         }
         button {
@@ -494,6 +494,9 @@ export function SessionPage({ slug }) {
         }
         .pip-stop {
           background: linear-gradient(180deg, #ef6a5f 0%, #ea4335 100%);
+        }
+        .pip-end {
+          background: linear-gradient(180deg, #f06b63 0%, #c5221f 100%);
         }
       `;
       pipDocument.head.appendChild(style);
@@ -545,8 +548,16 @@ export function SessionPage({ slug }) {
         void stopScreenShare();
       });
 
+      const endButton = pipDocument.createElement("button");
+      endButton.className = "pip-end";
+      endButton.textContent = "End call";
+      endButton.addEventListener("click", () => {
+        void endSession();
+      });
+
       actions.appendChild(muteButton);
       actions.appendChild(stopButton);
+      actions.appendChild(endButton);
 
       shell.appendChild(row);
       shell.appendChild(pipVideo);
@@ -562,7 +573,7 @@ export function SessionPage({ slug }) {
   }
 
   useEffect(() => {
-    if (!isInvestorAgent) return undefined;
+    if (!canScreenShare) return undefined;
 
     if (screenShareState.status === "active" && sessionPhase === "live") {
       void openPipWindow();
@@ -577,7 +588,7 @@ export function SessionPage({ slug }) {
         void closePipWindow();
       }
     };
-  }, [isInvestorAgent, screenShareState.status, sessionPhase]);
+  }, [canScreenShare, screenShareState.status, sessionPhase]);
 
   useEffect(() => {
     const preview = screenPreviewRef.current;
@@ -644,7 +655,7 @@ export function SessionPage({ slug }) {
   }, [codeDraft, codeLanguage, isCodingAgent, sessionPhase]);
 
   useEffect(() => {
-    if (!isInvestorAgent || screenShareState.status !== "active" || sessionPhase !== "live") {
+    if (!canScreenShare || screenShareState.status !== "active" || sessionPhase !== "live") {
       if (screenFrameTimerRef.current) {
         window.clearInterval(screenFrameTimerRef.current);
         screenFrameTimerRef.current = null;
@@ -712,7 +723,7 @@ export function SessionPage({ slug }) {
         screenFrameTimerRef.current = null;
       }
     };
-  }, [isInvestorAgent, screenShareState.status, screenShareState.surface, sessionPhase]);
+  }, [canScreenShare, screenShareState.status, screenShareState.surface, sessionPhase]);
 
   function normalizeDisplaySurface(displaySurface) {
     if (displaySurface === "browser") return "tab";
@@ -735,6 +746,24 @@ export function SessionPage({ slug }) {
     }
 
     return "Sharing screen";
+  }
+
+  function getScreenSharePanelTitle() {
+    return agent?.screenShareTitle || "Live Screen Share";
+  }
+
+  function getScreenShareHelperText() {
+    return (
+      agent?.screenShareHelperText ||
+      "Share a tab or window so the agent can react to what is visibly on screen."
+    );
+  }
+
+  function getScreenShareEmptyText() {
+    return (
+      agent?.screenShareEmptyText ||
+      "Start sharing when you want the agent to react to what is visibly on screen."
+    );
   }
 
   async function notifyScreenShareState(active, surface = "screen") {
@@ -780,7 +809,7 @@ export function SessionPage({ slug }) {
   }
 
   async function startScreenShare() {
-    if (!isInvestorAgent || sessionPhase !== "live") {
+    if (!canScreenShare || sessionPhase !== "live") {
       return;
     }
 
@@ -1457,14 +1486,14 @@ export function SessionPage({ slug }) {
                 </div>
               </div>
             </div>
-          ) : isInvestorAgent ? (
+          ) : canScreenShare ? (
             <div className="investor-sidebar">
               <div className="transcript-card">
                 <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <div>
-                    <div className="section-title">Live Product Demo</div>
+                    <div className="section-title">{getScreenSharePanelTitle()}</div>
                     <p className="muted-copy" style={{ margin: "6px 0 0" }}>
-                      Share a tab or window so the investor agent can watch your product demo.
+                      {getScreenShareHelperText()}
                     </p>
                   </div>
                   <div className={`status-chip ${screenShareState.status === "active" ? "status-success" : screenShareState.status === "denied" || screenShareState.status === "error" ? "status-danger" : ""}`}>
@@ -1512,9 +1541,9 @@ export function SessionPage({ slug }) {
                     />
                   ) : (
                     <div className="screen-preview-empty">
-                      <div className="screen-preview-title">Not sharing</div>
+                    <div className="screen-preview-title">Not sharing</div>
                       <p className="muted-copy" style={{ margin: "8px 0 0" }}>
-                        Start a live demo whenever you want the investor to react to what is visibly on screen.
+                        {getScreenShareEmptyText()}
                       </p>
                     </div>
                   )}
@@ -1537,7 +1566,7 @@ export function SessionPage({ slug }) {
                     ))
                   ) : (
                     <div className="empty-state">
-                      Transcript will appear here after the investor begins the session.
+                      Transcript will appear here after the session begins.
                     </div>
                   )}
                 </div>
@@ -1626,7 +1655,7 @@ export function SessionPage({ slug }) {
             ) : null}
           </div>
           <div className="footer-cluster">
-            {isInvestorAgent ? (
+            {canScreenShare ? (
               <div className={`status-chip ${screenShareState.status === "active" ? "status-success" : screenShareState.status === "denied" || screenShareState.status === "error" ? "status-danger" : ""}`}>
                 <span className="status-dot" />
                 {getScreenShareStatusLabel()}
