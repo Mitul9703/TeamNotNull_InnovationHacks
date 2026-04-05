@@ -139,8 +139,12 @@ export function SessionPage({ slug }) {
   const startedRef = useRef(false);
   const mutedRef = useRef(false);
   const timerRef = useRef(null);
-  const modelBufferRef = useRef("");
   const endedRef = useRef(false);
+  const transcriptListRef = useRef(null);
+  const modelBufferRef = useRef("");
+  const transcriptEntries = modelBuffer.trim()
+    ? [...transcript, { id: "live-model", role: agent?.name || "Agent", text: modelBuffer.trim(), live: true }]
+    : transcript;
 
   useEffect(() => {
     mutedRef.current = agentState?.session?.muted || false;
@@ -220,6 +224,12 @@ export function SessionPage({ slug }) {
     };
   }, []);
 
+  useEffect(() => {
+    const element = transcriptListRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+  }, [transcript]);
+
   async function createMicPipeline(mediaStream) {
     const audioContext = new window.AudioContext();
     const sourceNode = audioContext.createMediaStreamSource(mediaStream);
@@ -285,7 +295,7 @@ export function SessionPage({ slug }) {
 
       if (message.type === "model_text") {
         setModelBuffer((current) => {
-          const next = `${current}${message.text}`;
+          const next = `${current}${message.text || ""}`;
           modelBufferRef.current = next;
           return next;
         });
@@ -301,13 +311,19 @@ export function SessionPage({ slug }) {
       }
 
       if (message.type === "turn_complete") {
-        setTranscript((current) => {
-          const finalText = modelBufferRef.current.trim();
-          if (!finalText) return current;
-          const next = [...current, { role: agent.name, text: finalText }];
+        const finalText = modelBufferRef.current.trim();
+        if (finalText) {
+          setTranscript((current) => [
+            ...current,
+            {
+              id: `model-${Date.now()}`,
+              role: agent.name,
+              text: finalText,
+              live: false,
+            },
+          ]);
           socket.send(JSON.stringify({ type: "save_model_text", text: finalText }));
-          return next;
-        });
+        }
         setModelBuffer("");
         modelBufferRef.current = "";
         return;
@@ -321,10 +337,25 @@ export function SessionPage({ slug }) {
               !item.text.startsWith(`Begin this ${agent.name} rehearsal with a short greeting`),
           )
           .map((item) => ({
+            id: `history-${item.role}-${item.text.slice(0, 32)}`,
             role: item.role === "user" ? "You" : agent.name,
             text: item.text,
+            live: false,
           }));
-        setTranscript(nextTranscript);
+
+        setTranscript((current) => {
+          if (!current.length && !modelBufferRef.current.trim()) {
+            return nextTranscript;
+          }
+
+          const existingKeys = new Set(
+            current.map((entry) => `${entry.role}::${entry.text.trim()}`),
+          );
+          const additions = nextTranscript.filter(
+            (entry) => !existingKeys.has(`${entry.role}::${entry.text.trim()}`),
+          );
+          return additions.length ? [...current, ...additions] : current;
+        });
       }
     };
 
@@ -370,7 +401,7 @@ export function SessionPage({ slug }) {
         videoRef.current,
         audioRef.current,
         null,
-        LogLevel.DEBUG,
+        LogLevel.CRITICAL,
         "livekit",
       );
 
@@ -469,6 +500,8 @@ export function SessionPage({ slug }) {
         } catch (_error) {}
         simliClientRef.current = null;
       }
+      setModelBuffer("");
+      modelBufferRef.current = "";
     })();
 
     await cleanupPromiseRef.current;
@@ -613,11 +646,14 @@ export function SessionPage({ slug }) {
             <p className="muted-copy">
               Current status: {statusText}
             </p>
-            <div className="transcript-list">
-              {transcript.length ? (
-                transcript.map((entry, index) => (
-                  <div className="transcript-item" key={`${entry.role}-${index}`}>
-                    <div className="transcript-role">{entry.role}</div>
+            <div className="transcript-list" ref={transcriptListRef}>
+              {transcriptEntries.length ? (
+                transcriptEntries.map((entry, index) => (
+                  <div className="transcript-item" key={entry.id || `${entry.role}-${index}`}>
+                    <div className="transcript-role">
+                      {entry.role}
+                      {entry.live ? " • Live" : ""}
+                    </div>
                     <p className="transcript-text">{entry.text}</p>
                   </div>
                 ))
@@ -633,18 +669,45 @@ export function SessionPage({ slug }) {
 
         <div className="session-footer">
           <div className="footer-cluster">
-            <button type="button" className="mute-pill" onClick={toggleMute}>
-              <strong>{agentState.session.muted ? "Muted" : "Mic live"}</strong>
+            <button
+              type="button"
+              className={`btn ${agentState.session.muted ? "btn-secondary" : "btn-primary"}`}
+              onClick={toggleMute}
+            >
+              {agentState.session.muted ? "Unmute mic" : "Mute mic"}
+            </button>
+            <div className="mute-pill">
+              <strong>{agentState.session.muted ? "Mic muted" : "Mic live"}</strong>
               <span className="muted-copy">
                 {agentState.session.muted
-                  ? "Questions still continue, your audio is paused."
+                  ? "Your audio is paused until you unmute."
                   : "Your audio is streaming to the rehearsal room."}
               </span>
+            </div>
+            {modelBuffer.trim() ? (
+              <div className="status-chip status-warning">
+                <span className="status-dot" />
+                Transcript streaming live
+              </div>
+            ) : null}
+            {transcript.length ? (
+              <div className="status-chip status-success">
+                <span className="status-dot" />
+                {transcript.length} transcript turn{transcript.length > 1 ? "s" : ""}
+              </div>
+            ) : null}
+            {!transcript.length && !modelBuffer.trim() ? (
+              <div className="status-chip">
+                <span className="status-dot" />
+                Waiting for transcript data
+              </div>
+            ) : null}
+          </div>
+          <div className="footer-cluster">
+            <button type="button" className="btn btn-danger" onClick={endSession}>
+              End call
             </button>
           </div>
-          <button type="button" className="btn btn-danger" onClick={endSession}>
-            End call
-          </button>
         </div>
       </div>
     </AppShell>

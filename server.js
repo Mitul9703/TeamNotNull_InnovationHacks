@@ -25,7 +25,7 @@ let uploadedContextText = "";
 let uploadedFileName = "";
 
 function registerLiveBridge(server) {
-  const wss = new WebSocketServer({ server, path: "/api/live" });
+  const wss = new WebSocketServer({ noServer: true });
 
   wss.on("connection", async (clientSocket) => {
     console.log("Browser connected to /api/live");
@@ -267,10 +267,21 @@ ${extraContext}
       } catch (_error) {}
     });
   });
+
+  server.on("upgrade", (request, socket, head) => {
+    const pathname = request.url || "";
+
+    if (pathname.startsWith("/api/live")) {
+      wss.handleUpgrade(request, socket, head, (clientSocket) => {
+        wss.emit("connection", clientSocket, request);
+      });
+    }
+  });
 }
 
 async function startServer() {
   await nextApp.prepare();
+  const nextUpgradeHandler = nextApp.getUpgradeHandler();
 
   const app = express();
   app.use(express.json());
@@ -348,6 +359,15 @@ ${rawText}`,
 
   const server = http.createServer(app);
   registerLiveBridge(server);
+  server.on("upgrade", (request, socket, head) => {
+    const pathname = request.url || "";
+
+    if (pathname.startsWith("/api/live")) {
+      return;
+    }
+
+    nextUpgradeHandler(request, socket, head);
+  });
 
   server.listen(port, hostname, () => {
     console.log(`PitchMirror running at http://${hostname}:${port}`);

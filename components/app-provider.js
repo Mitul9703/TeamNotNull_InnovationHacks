@@ -40,6 +40,22 @@ function buildInitialAgentState() {
   }, {});
 }
 
+function buildPersistedAgents(agents) {
+  return AGENTS.reduce((acc, agent) => {
+    const current = agents?.[agent.slug] || buildInitialAgentState()[agent.slug];
+    acc[agent.slug] = {
+      session: {
+        ...current.session,
+      },
+      evaluation: {
+        ...current.evaluation,
+      },
+      rating: current.rating || 0,
+    };
+    return acc;
+  }, {});
+}
+
 function sanitizeState(state) {
   const initial = buildInitialAgentState();
 
@@ -57,8 +73,6 @@ function sanitizeState(state) {
     initial[agent.slug] = {
       upload: {
         ...initial[agent.slug].upload,
-        ...saved.upload,
-        previewUrl: "",
       },
       session: {
         ...initial[agent.slug].session,
@@ -103,7 +117,7 @@ export function AppProvider({ children }) {
       STORAGE_KEY,
       JSON.stringify({
         theme: state.theme,
-        agents: state.agents,
+        agents: buildPersistedAgents(state.agents),
       }),
     );
     document.documentElement.dataset.theme = state.theme;

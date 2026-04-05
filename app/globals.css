@@ -643,6 +643,10 @@ button {
   background: var(--bg-panel);
 }
 
+.mute-pill strong {
+  white-space: nowrap;
+}
+
 .session-stat {
   min-width: 130px;
 }
