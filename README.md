@@ -1,363 +1,319 @@
 # PitchMirror
 
-PitchMirror is an AI rehearsal room for high-stakes speaking scenarios. It helps users practice interviews, presentations, pitches, and live coding rounds with a realistic conversational agent, a live avatar, contextual grounding from uploaded documents, and post-session feedback.
+PitchMirror is a multi-agent simulation environment for interviews, pitches, presentations, and coding rounds. It is built for situations where delivery matters as much as knowledge: speaking with confidence, staying concise, thinking under pressure, defending decisions, and explaining thought process in real time.
 
-## Hackathon Tooling
+The app combines role-specific agents, live avatar sessions, uploaded context, screen sharing, coding interview flows, saved history, progress tracking, and post-session evaluation in one system. 
 
-This project uses hackathon-required tools in meaningful product-facing ways:
+## Description
 
-- **TinyFish** was used to fetch targeted web resources for a user’s improvement areas after evaluation, including videos, articles, and websites tied to their weaknesses.
-- **Claude Code** was used during development for UI and UX iteration, agent system prompt design, project planning, and implementation support across the product workflow.
+PitchMirror is designed around one idea: people often underperform not because they lack knowledge, but because they have not trained for the environment.
 
-## Problem Statement
+That problem shows up in different ways:
+- a founder struggles to defend a product demo under investor pressure
+- a student loses clarity during a professor-style Q&A
+- a candidate solves a coding problem but cannot explain the reasoning out loud
+- a user improves across sessions, but has no structured way to measure progress
 
-People rarely fail important presentations, interviews, or demos because they completely lack knowledge. More often, they struggle with:
+PitchMirror addresses that by simulating the room itself.
 
-- speaking clearly under pressure
-- organizing answers in real time
-- staying confident when challenged
-- practicing with realistic follow-up questions
-- understanding how to improve between attempts
+The app supports multiple role-specific agents:
+- recruiter
+- professor
+- investor
+- coding interviewer
+- custom agent
 
-Generic voice assistants can talk back, but they do not behave like a scenario-specific interviewer, professor, investor, or recruiter. They also do not provide grounded evaluation, tailored improvement resources, or progress comparison across sessions.
+Each agent has its own prompt, behavior, evaluation criteria, and use of context. A session can also include uploaded documents, optional user context, optional company URLs for external research, live screen sharing for non-coding agents, and thread-based memory across repeated sessions.
 
-PitchMirror solves this by creating a rehearsal environment that feels more like the real room:
+## User Flow
 
-- live avatar-based interaction
-- role-specific questioning
-- optional document grounding
-- session evaluation
-- improvement resources
-- comparison with past sessions
+### 1. Landing page
 
-## What PitchMirror Does
+The landing page gives the user a high-level entry into the product. It shows the available agents as separate cards and introduces the simulation styles the app supports.
 
-PitchMirror lets a user choose a practice agent, optionally upload supporting material, start a live session, and review detailed feedback afterward.
+From here, a user can:
+- browse the available agents
+- pick a role-specific simulation track
+- switch between light and dark mode
 
-Core flow:
+The purpose of this screen is to communicate that PitchMirror is not a single assistant with different prompts. It is a set of distinct simulation experiences.
 
-1. Choose an agent
-2. Add a session name
-3. Optionally add role-specific context
-4. Optionally upload a supporting PDF
-5. Start a live session
-6. Speak with the agent in real time
-7. End the session and review the report
-8. Fetch resources and compare progress with prior sessions
+### 2. Agent page
 
-## Key Features
+Clicking an agent opens its dedicated page.
 
-### 1. Scenario-Specific Practice Agents
+This screen shows:
+- the scenario description for the agent
+- the evaluation criteria for that agent
+- the list of previously created threads for that agent
+- a required field to create a new thread
 
-PitchMirror supports multiple agent types, each with its own questioning style and evaluation rubric.
+From here, a user can:
+- understand what the agent is meant to simulate
+- see how they will be evaluated
+- open an existing thread
+- delete an existing thread
+- create a new thread
 
-- **Recruiter Loop**
-  Practice recruiter screens, behavioral answers, role-fit framing, and impact storytelling.
+This page acts as the top-level workspace for one simulation type. For example, the investor page is focused on pitch and demo pressure, while the coding page is focused on think-aloud problem solving.
 
-- **Professor Panel**
-  Rehearse thesis defenses, capstone reviews, academic presentations, and deeper follow-up questions.
+### 3. Thread page
 
-- **Investor Room**
-  Practice startup or product pitches with questions around traction, differentiation, and conviction.
+Once a thread is created, the user enters the thread page. This is the main planning and review screen for repeated practice.
 
-- **Coding Round**
-  Simulate a live coding interview where the interviewer introduces the problem verbally and follows the candidate’s spoken reasoning and code.
+This screen contains:
+- a required session-name field
+- optional context for the next session
+- optional company URL for supported agents
+- optional PDF upload
+- the thread-level evaluation area
+- the hidden thread-memory viewer
+- the list of past sessions in that thread
 
-- **Custom Agent**
-  Flexible rehearsal mode for presentations, demos, oral exams, leadership updates, or custom scenarios.
+From here, a user can:
+- start a new session inside the thread
+- upload a supporting document
+- provide context to shape the scenario
+- provide a company URL for pre-session research
+- inspect past sessions in that thread
+- inspect thread-level progress once sessions exist
+- delete the thread
+- delete individual sessions inside the thread
 
-### 2. Live Avatar + Real-Time Voice Interaction
+The thread model is important. Sessions do not live in isolation. A thread stores the user’s session history for one ongoing goal, and later sessions can be shaped by hidden memory from earlier ones. That memory is used internally to steer questioning, not exposed directly during the live conversation.
 
-The user interacts with a live avatar instead of a plain text bot. This makes practice feel more realistic and helps simulate the psychological pressure of speaking to a person, not just a chat interface.
+### 4. Pre-session preparation
 
-### 3. Optional Supporting Documents
+Before some sessions start, the app can do background preparation.
 
-Users can upload PDFs such as:
+Supported flows:
+- **coding**: research a company-relevant coding question
+- **investor**: gather public company or product context
+- **custom**: gather public context based on the provided URL and scenario
+- **professor**: does not use this external research flow
 
-- resumes
-- pitch decks
-- slide decks
-- presentation notes
-- project briefs
+This preparation happens after the user clicks Start Session. The UI shows a loading state while the background job runs.
 
-The uploaded content is parsed, cleaned, and used as grounded context for the session when relevant.
+This step exists so the live agent can begin the conversation with stronger context instead of asking generic questions.
 
-### 4. Optional Role Context
+### 5. Live session page
 
-Each agent includes an optional text context field so the user can fine-tune the room with extra details such as:
+The live session page is the core simulation screen.
 
-- job descriptions
-- audience expectations
-- grading criteria
-- investor concerns
-- technical interview focus areas
+This screen includes:
+- a live avatar stage
+- real-time transcript
+- elapsed session time
+- mute control
+- end-call control
+- optional screen-sharing UI for non-coding agents
+- optional coding editor for coding sessions
+- overlays for mic permission, errors, and session transitions
+- a floating Picture-in-Picture control surface during screen sharing
 
-### 5. Coding Interview Workspace
+From here, a user can:
+- speak with the live agent
+- allow mic access
+- share a screen, tab, or window in non-coding sessions
+- work through a coding round in the coding flow
+- mute audio
+- end the session
 
-The Coding Round includes a code editor with:
+#### Non-coding live flow
 
-- line numbers
-- syntax highlighting by selected language
-- live code context available to the interviewer
-- think-aloud interview flow
+For recruiter, professor, investor, and custom agents, the session is driven by live speech and transcript. If screen sharing is used, the app captures the visible screen and forwards sampled frames into the live reasoning pipeline.
 
-The interviewer can respond to the candidate’s reasoning and code progress without turning into a coding assistant.
+This is especially important in investor sessions, where the agent can challenge what is visibly shown during a product demo instead of only responding to the spoken pitch.
 
-### 6. Evaluation Dashboard
+#### Coding live flow
 
-After a session ends, PitchMirror generates a report with:
+For coding sessions, the app supports a live coding interview format. The coding interviewer can use pre-session research to introduce a company-relevant question. The user is expected to think aloud while writing code, and the agent can challenge logic, tradeoffs, and reasoning during the round.
 
-- overall score
-- metric-by-metric breakdown
-- strengths
-- improvements
-- next steps
+The coding flow is built around the interview dynamic, not around code execution. The point is to evaluate communication and problem solving under pressure.
 
-Each agent uses its own rubric, so the evaluation is not generic across all scenarios.
+### 6. Session end and evaluation
 
-### 7. Improvement Resources
+When the user ends a session, the app returns them to the saved history flow and starts evaluation in the background.
 
-Users can fetch targeted learning resources after evaluation. These are tied to their main improvement areas and are shown on the saved session page.
-
-### 8. Session Comparison
-
-Users can compare a completed session with another past session for the same agent to understand whether they improved and where they still need work.
-
-### 9. Saved Session History
-
-Each completed session is stored locally in the browser with:
-
-- session name
-- duration
+A completed session stores:
 - transcript
-- uploaded file metadata
-- evaluation result
-- comparison result
-- fetched resources
+- timing metadata
+- optional uploaded document context
+- optional external research context
+- coding metadata when relevant
+- evaluation status
+- resources status
+- comparison status
 
-## Agents and Use Cases
+Session evaluation is agent-specific. A coding interview is not scored the same way as an investor pitch. The evaluation focuses on the dimensions defined for that agent.
 
-### Recruiter Loop
+### 7. Session detail page
 
-Best for:
+Each saved session has its own report page.
 
-- internship interviews
-- first-round recruiter screens
-- behavioral practice
-- role-fit storytelling
+This screen shows:
+- session metadata
+- thread link
+- uploaded-file information
+- external research or coding question context
+- the full session evaluation
+- improvement resources
+- transcript history
+- session comparison tools
 
-Optional context examples:
+From here, a user can:
+- review one session in detail
+- inspect the coding or external research context used in that session
+- compare it to another session
+- view targeted improvement resources
+- delete the session
 
-- job description
-- target team
-- company context
-- recruiter priorities
+This is the most detailed reporting screen in the product. It is where the single-session simulation loop turns into actionable feedback.
 
-### Professor Panel
+### 8. Thread-level reporting
 
-Best for:
+Threads also have their own evaluation layer.
 
-- thesis defense practice
-- research demos
-- academic presentations
-- class project reviews
+Thread evaluation aggregates multiple sessions and shows:
+- summary
+- trajectory
+- next-session focus
+- metric trends
+- recurring strengths
+- recurring focus areas
+- thread comments
+- hidden internal memory used to steer future sessions
 
-Optional context examples:
+From here, a user can:
+- track progress across attempts
+- understand what is improving and what is recurring
+- see what future sessions will emphasize
+- inspect the hidden steering memory
 
-- thesis summary
-- grading rubric
-- research scope
-- expected faculty concerns
+This turns repeated practice into a more structured growth loop instead of a collection of disconnected runs.
 
-### Investor Room
+## What Makes It Different
 
-Best for:
+PitchMirror is not just a wrapper over a voice model.
 
-- startup pitches
-- fundraising practice
-- product demos
-- founder narrative rehearsal
+It combines role-specific simulation, live multimodal context, and post-session progress tracking in one system.
 
-Optional context examples:
+The biggest differentiators in this release are:
 
-- stage and traction
-- investor concerns
-- market assumptions
-- fund thesis alignment
+- **Role-specific agents**  
+  Recruiter, professor, investor, coding, and custom agents all have different prompts, evaluation criteria, and behaviors. They are not the same assistant wearing different labels.
 
-### Coding Round
+- **Live screen-aware simulation**  
+  Non-coding sessions support live screen sharing through. The visible screen becomes part of the simulation context, especially in investor demos.
 
-Best for:
+- **Live coding interview flow**  
+  The coding agent can run a company-aware technical round and challenge the user’s reasoning while they code and think aloud.
 
-- technical interview rehearsal
-- live problem solving
-- think-aloud communication practice
-- code explanation under pressure
+- **Thread-based memory**  
+  Sessions are grouped into threads, and later sessions can be shaped by the user’s past performance without breaking the realism of the current role.
 
-Optional context examples:
+- **Evaluation plus improvement loop**  
+  Each session is evaluated, resources are fetched afterward, and thread-level progress is tracked over time.
 
-- target company style
-- preferred language
-- interview expectations
-- problem focus area
+A normal voice agent can answer.
+PitchMirror can simulate, evaluate, and adapt.
 
-### Custom Agent
-
-Best for:
-
-- product demos
-- leadership updates
-- oral exams
-- general presentations
-
-## How To Use PitchMirror
-
-### Starting a New Session
-
-1. Open the landing page
-2. Click **View agents**
-3. Select the agent you want
-4. Enter a **Session name**
-5. Optionally add text context
-6. Optionally upload a PDF
-7. Click **Start session**
-
-### During the Session
-
-- The agent starts the conversation
-- The user speaks naturally
-- In Coding Round, the user also types into the code editor
-- The live transcript updates during the session
-- The session remains in the same tab
-
-### After the Session
-
-1. End the session
-2. Wait for evaluation processing
-3. Open the saved session page
-4. Review evaluation metrics
-5. Fetch improvement resources if desired
-6. Compare with another past session
-
-## Evaluation
-
-Each agent has a different evaluation rubric. The app does not score all scenarios with the same metrics.
-
-Examples:
-
-- recruiter sessions focus on communication clarity, ownership, impact storytelling, and role alignment
-- professor sessions focus on conceptual clarity, rigor, evidence, and composure
-- investor sessions focus on market clarity, traction, differentiation, and conviction
-- coding sessions focus on problem understanding, algorithmic reasoning, code clarity, and communication while coding
-
-## Technical Overview
+## Tech stack
 
 ### Frontend
 
-- Next.js
-- React
-- JavaScript
-- CodeMirror for the coding editor
+- **React 19** for the application UI
+- **App Router-based route structure** in [app](./app)
+- **JavaScript** throughout the client and server code
+- **CodeMirror 6** via [@uiw/react-codemirror](https://github.com/uiwjs/react-codemirror) for the coding round editor
+- custom CSS in [app/globals.css](./app/globals.css)
+- browser media APIs for mic capture, screen sharing, and PiP
 
 ### Backend
 
-- Node.js
-- Express
-- WebSocket server
+- **Node.js**
+- **Express** for API routes
+- **ws** for the custom WebSocket bridge
+- **multer** for PDF uploads
+- **pdf-parse** for extracting raw PDF text
 
-### AI / Media Stack
+### AI and realtime stack
 
-- Gemini Live for conversation and response generation
-- Simli for live avatar streaming
-- AssemblyAI for user-side transcription
-- TinyFish for improvement resource discovery
+- **Gemini Live** via [@google/genai](https://www.npmjs.com/package/@google/genai)  
+  Used for the live conversational engine, agent behavior, transcript-aware reasoning, uploaded-file context, hidden thread memory, and screen-share visual context.
 
-## Project Structure
+- **Gemini model used for live sessions**  
+  - `gemini-2.5-flash-native-audio-preview-12-2025`
 
-```text
-app/                  Next.js app routes
-components/           UI components and live session experience
-data/                 Agent definitions and prompts
-lib/                  Shared helpers and client config
-server.js             Express + WebSocket backend
-render.yaml           Render deployment config
-.env.example          Environment variable template
-```
+- **Gemini model used for generation and structured evaluation tasks**  
+  - `gemini-2.5-flash`
 
-## Environment Variables
+This `gemini-2.5-flash` path is used for:
+- upload context cleanup
+- session evaluation
+- thread evaluation
+- session comparison
+- post-resource curation
+- parts of external research synthesis
 
-See [.env.example](/Users/mitulkrishna/Documents/Projects/Slimli/.env.example).
+### Avatar stack
 
-Expected variables:
+- **Anam JavaScript SDK** via [@anam-ai/js-sdk](https://www.npmjs.com/package/@anam-ai/js-sdk)
 
-- `GEMINI_API_KEY`
-- `ASSEMBLYAI_API_KEY`
-- `TINYFISH_API_KEY`
-- `NEXT_PUBLIC_SIMLI_API_KEY`
-- `NEXT_PUBLIC_SIMLI_FACE_IDS`
-- `NEXT_PUBLIC_BACKEND_HTTP_URL`
-- `NEXT_PUBLIC_BACKEND_WS_URL`
+In this project, Anam is used as the **avatar rendering layer**, not as the core reasoning layer.
 
-## Local Development
+The current setup uses:
+- Gemini Live for the actual voice output and live logic
+- Anam for avatar rendering and audio passthrough lip-sync
 
-Install dependencies:
+That separation keeps the voice and simulation logic stable while making the avatar system replaceable.
 
-```bash
-npm install
-```
+### Transcription
 
-Run locally:
+- **AssemblyAI** via [assemblyai](https://www.npmjs.com/package/assemblyai)
 
-```bash
-npm run dev
-```
+AssemblyAI handles live user transcription so the session transcript includes the user side of the conversation as well.
 
-Build locally:
+### External research and resources
 
-```bash
-npm run build
-```
+- **Firecrawl** for search and scraping
+- **LangChain** for tool-based orchestration
+- **Zod** for tool schemas and validation
 
-## Deployment Notes
+The project uses a **ReAct-style agentic workflow** for external research. That flow is implemented in [server.js](./server.js) with LangChain’s `createAgent()` plus explicit search and scrape tools.
 
-PitchMirror currently uses a custom Node server and a WebSocket server, so the safest deployment model is:
+This is used for:
+- company-aware coding-question research
+- investor/company diligence context
+- generic external context for custom sessions
+- improvement-resource discovery and ranking
 
-- **Render** for the backend and live session server
-- **Vercel** for the frontend, if desired
+The ReAct agent does not just call a single search endpoint. It follows a tool-using loop:
+1. search for candidate sources
+2. inspect likely pages
+3. scrape the strongest matches
+4. synthesize one grounded result for the live session or report
 
-For a fast hackathon deployment, using **Render only** is also a valid option because the current server can host both the frontend and backend together.
+That makes the context generation more explainable and more controllable than a one-shot prompt.
 
-## Privacy Note
 
-Uploaded document context is handled per session and should not be stored globally across users. Saved session history is stored in the browser for that browser unless backed by a database in a future version.
+## Environment example
 
-## Current Scope
+```env
+NODE_ENV=development
+HOST=0.0.0.0
+PORT=3000
 
-This version is a strong prototype focused on:
+GEMINI_API_KEY=your_default_gemini_key
+GEMINI_LIVE_API_KEY=your_gemini_live_key
+GEMINI_QUESTION_FINDER_API_KEY=your_question_finder_key
+GEMINI_EVALUATION_API_KEY=your_evaluation_key
+GEMINI_RESOURCE_CURATION_API_KEY=your_resource_key
+GEMINI_UPLOAD_PREP_API_KEY=your_upload_prep_key
 
-- realistic practice
-- contextual questioning
-- live interaction
-- post-session feedback
-- visible progress over time
+ANAM_API_KEY=your_anam_api_key
+ASSEMBLYAI_API_KEY=your_assemblyai_key
+FIRECRAWL_API_KEY=your_firecrawl_key
 
-Future improvements could include:
-
-- stronger audio-based delivery analysis
-- database-backed multi-user session storage
-- authentication
-- more robust deployment separation
-- richer coding interview analysis
-
-## Demo Narrative
-
-PitchMirror is designed to show that rehearsal can be more than a chatbot conversation. It combines:
-
-- scenario-specific agents
-- grounded context
-- live avatar interaction
-- evaluation
-- improvement resources
-- comparison across attempts
-
-The result is a rehearsal tool built to help users become more confident, more prepared, and more aware of how they improve over time.
+NEXT_PUBLIC_BACKEND_HTTP_URL=
+NEXT_PUBLIC_BACKEND_WS_URL=
