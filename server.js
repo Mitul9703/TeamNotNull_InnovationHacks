@@ -47,6 +47,38 @@ function getGeminiApiKey(task) {
   throw new Error(`Missing Gemini API key for task "${task}". Checked: ${candidates.join(", ")}`);
 }
 
+const ANAM_AVATAR_PROFILES = [
+  { name: "Kevin", avatarId: "ccf00c0e-7302-455b-ace2-057e0cf58127", gender: "Male" },
+  { name: "Gabriel", avatarId: "6cc28442-cccd-42a8-b6e4-24b7210a09c5", gender: "Male" },
+  { name: "Sophie", avatarId: "6dbc1e47-7768-403e-878a-94d7fcc3677b", gender: "Female" },
+  { name: "Astrid", avatarId: "e717a556-2d44-4213-96ec-27d0b94dc198", gender: "Female" },
+  { name: "Cara", avatarId: "d9ebe82e-2f34-4ff6-9632-16cb73e7de08", gender: "Female" },
+  { name: "Mia", avatarId: "edf6fdcb-acab-44b8-b974-ded72665ee26", gender: "Female" },
+  { name: "Leo", avatarId: "d73415e3-d624-45a6-a461-0df1580e73d6", gender: "Male" },
+  { name: "Richard", avatarId: "19d18eb0-5346-4d50-a77f-26b3723ed79d", gender: "Male" },
+];
+
+const GEMINI_VOICE_BY_GENDER = {
+  Male: ["Charon"],
+  Female: ["Aoede", "Autonoe", "Despina", "Sulafat"],
+};
+
+function pickRandomItem(items) {
+  if (!Array.isArray(items) || !items.length) {
+    return null;
+  }
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function pickRandomAnamProfile() {
+  const profile = pickRandomItem(ANAM_AVATAR_PROFILES) || ANAM_AVATAR_PROFILES[0];
+  const voicePool = GEMINI_VOICE_BY_GENDER[profile.gender] || GEMINI_VOICE_BY_GENDER.Female;
+  return {
+    ...profile,
+    voiceName: pickRandomItem(voicePool) || "Aoede",
+  };
+}
+
 const evaluationResponseSchema = {
   type: Type.OBJECT,
   required: [
@@ -1478,6 +1510,62 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, hasDeck: false });
+  });
+
+  app.post("/api/anam-session-token", async (req, res) => {
+    try {
+      const { agentSlug } = req.body || {};
+      const agent = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
+      const anamApiKey = process.env.ANAM_API_KEY;
+      const avatarProfile = pickRandomAnamProfile();
+
+      if (!anamApiKey) {
+        return res.status(500).json({
+          error: "Missing Anam configuration.",
+          details: "ANAM_API_KEY is not set.",
+        });
+      }
+
+      const response = await fetch("https://api.anam.ai/v1/auth/session-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${anamApiKey}`,
+        },
+        body: JSON.stringify({
+          personaConfig: {
+            name: avatarProfile.name,
+            avatarId: avatarProfile.avatarId,
+            enableAudioPassthrough: true,
+          },
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.sessionToken) {
+        return res.status(response.status || 500).json({
+          error: "Failed to create Anam session token.",
+          details: payload?.message || payload?.error || "Unknown Anam session error.",
+        });
+      }
+
+      return res.json({
+        ok: true,
+        sessionToken: payload.sessionToken,
+        avatarProfile: {
+          name: avatarProfile.name,
+          avatarId: avatarProfile.avatarId,
+          gender: avatarProfile.gender,
+          voiceName: avatarProfile.voiceName,
+        },
+      });
+    } catch (error) {
+      console.error("Anam session token error:", error);
+      return res.status(500).json({
+        error: "Failed to create Anam session token.",
+        details: error.message,
+      });
+    }
   });
 
   app.post("/api/upload-deck", upload.single("deck"), async (req, res) => {

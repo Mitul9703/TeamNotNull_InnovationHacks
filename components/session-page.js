@@ -10,13 +10,9 @@ import { cpp } from "@codemirror/lang-cpp";
 import { java } from "@codemirror/lang-java";
 import { sql } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
-import {
-  SimliClient,
-  LogLevel,
-  generateSimliSessionToken,
-} from "simli-client";
+import { createClient, AnamEvent } from "@anam-ai/js-sdk";
 import { AGENT_LOOKUP } from "../lib/agents";
-import { getBackendWsUrl } from "../lib/client-config";
+import { getApiUrl, getBackendWsUrl } from "../lib/client-config";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
 
@@ -119,41 +115,6 @@ function formatDuration(totalSeconds) {
   return `${minutes}:${seconds}`;
 }
 
-function pickRandomFaceId() {
-  const faceProfiles = [
-    {
-      faceId: "cace3ef7-a4c4-425d-a8cf-a5358eb0c427",
-      voiceName: "Aoede",
-    },
-    {
-      faceId: "b9e5fba3-071a-4e35-896e-211c4d6eaa7b",
-      voiceName: "Autonoe",
-    },
-    {
-      faceId: "d2a5c7c6-fed9-4f55-bcb3-062f7cd20103",
-      voiceName: "Despina",
-    },
-    {
-      faceId: "7e74d6e7-d559-4394-bd56-4923a3ab75ad",
-      voiceName: "Charon",
-    },
-    {
-      faceId: "804c347a-26c9-4dcf-bb49-13df4bed61e8",
-      voiceName: "Charon",
-    },
-    {
-      faceId: "afdb6a3e-3939-40aa-92df-01604c23101c",
-      voiceName: "Sulafat",
-    },
-    {
-      faceId: "dd10cb5a-d31d-4f12-b69f-6db3383c006e",
-      voiceName: "Charon",
-    },
-  ];
-
-  return faceProfiles[Math.floor(Math.random() * faceProfiles.length)];
-}
-
 function getCodingLanguageExtensions(language) {
   const normalized = (language || "").toLowerCase();
   const extensions = [EditorView.lineWrapping];
@@ -215,9 +176,8 @@ export function SessionPage({ slug }) {
   const codeExtensions = useMemo(() => getCodingLanguageExtensions(codeLanguage), [codeLanguage]);
 
   const videoRef = useRef(null);
-  const audioRef = useRef(null);
   const screenPreviewRef = useRef(null);
-  const simliClientRef = useRef(null);
+  const anamClientRef = useRef(null);
   const pipWindowRef = useRef(null);
   const browserSocketRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -239,7 +199,7 @@ export function SessionPage({ slug }) {
   const screenFrameTimerRef = useRef(null);
   const screenCaptureCanvasRef = useRef(null);
   const lastSentCodeRef = useRef("");
-  const avatarProfileRef = useRef(null);
+  const anamAudioStreamRef = useRef(null);
   const mutedStateRef = useRef(false);
   const transcriptEntries = [
     ...transcript,
@@ -1018,16 +978,23 @@ export function SessionPage({ slug }) {
         return;
       }
 
-      if (message.type === "audio_chunk" && simliClientRef.current) {
+      if (message.type === "audio_chunk" && anamAudioStreamRef.current) {
         const pcm24kBytes = base64ToUint8Array(message.data);
         const pcm24kInt16 = pcmBytesToInt16Array(pcm24kBytes);
         const pcm16kInt16 = downsampleInt16(pcm24kInt16, 24000, 16000);
-        simliClientRef.current.sendAudioData(new Uint8Array(pcm16kInt16.buffer));
+        anamAudioStreamRef.current.sendAudioChunk(new Uint8Array(pcm16kInt16.buffer));
         return;
       }
 
       if (message.type === "turn_complete") {
         const finalText = modelBufferRef.current.trim();
+        if (anamAudioStreamRef.current) {
+          try {
+            anamAudioStreamRef.current.endSequence();
+          } catch (error) {
+            console.error("Anam audio sequence end error:", error);
+          }
+        }
         if (finalText) {
           setTranscript((current) => [
             ...current,
@@ -1089,41 +1056,30 @@ export function SessionPage({ slug }) {
 
   async function startSessionFlow(mediaStream) {
     try {
-      const apiKey = process.env.NEXT_PUBLIC_SIMLI_API_KEY;
-      const avatarProfile = pickRandomFaceId();
-      const faceId = avatarProfile?.faceId;
-      avatarProfileRef.current = avatarProfile;
-
-      if (!apiKey || !faceId) {
-        throw new Error("Missing Simli configuration.");
-      }
-
       setStatusText("Creating secure avatar session...");
-      const sessionToken = await generateSimliSessionToken({
-        apiKey,
-        config: {
-          faceId,
-          handleSilence: true,
-          maxSessionLength: 600,
-          maxIdleTime: 180,
-          model: "fasttalk",
+      const tokenResponse = await fetch(getApiUrl("/api/anam-session-token"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          agentSlug: slug,
+        }),
       });
+      const tokenPayload = await tokenResponse.json();
+      if (!tokenResponse.ok || !tokenPayload?.sessionToken) {
+        throw new Error(tokenPayload?.details || tokenPayload?.error || "Failed to create Anam session.");
+      }
+      const selectedVoiceName = tokenPayload?.avatarProfile?.voiceName || "";
 
-      if (!videoRef.current || !audioRef.current) {
+      if (!videoRef.current) {
         throw new Error("Video stage is not ready.");
       }
 
-      const simliClient = new SimliClient(
-        sessionToken?.session_token || sessionToken,
-        videoRef.current,
-        audioRef.current,
-        null,
-        LogLevel.CRITICAL,
-        "livekit",
-      );
-
-      simliClient.on("start", () => {
+      const anamClient = createClient(tokenPayload.sessionToken, {
+        disableInputAudio: true,
+      });
+      const markLive = () => {
         setSessionPhase("live");
         setStatusText("Avatar connected. Session is live.");
         patchAgent(slug, (current) => ({
@@ -1133,27 +1089,43 @@ export function SessionPage({ slug }) {
             status: "active",
           },
         }));
+      };
+
+      anamClient.addListener(AnamEvent.SESSION_READY, () => {
+        markLive();
       });
 
-      simliClient.on("stop", () => {
-        setStatusText("Avatar stream ended.");
+      anamClient.addListener(AnamEvent.VIDEO_PLAY_STARTED, () => {
+        markLive();
       });
 
-      simliClient.on("error", (message) => {
+      anamClient.addListener(AnamEvent.CONNECTION_CLOSED, (_reason, details) => {
+        if (endedRef.current) {
+          return;
+        }
         setSessionPhase("error");
-        setStatusText(message || "Avatar stream error.");
+        setStatusText(details || "Avatar stream ended.");
       });
 
-      simliClient.on("startup_error", (message) => {
+      anamClient.addListener(AnamEvent.SERVER_WARNING, (message) => {
+        console.warn("Anam warning:", message);
+      });
+
+      anamClient.addListener(AnamEvent.MIC_PERMISSION_DENIED, (message) => {
         setSessionPhase("error");
         setStatusText(message || "Avatar failed to start.");
       });
 
-      simliClientRef.current = simliClient;
+      anamClientRef.current = anamClient;
 
-      await simliClient.start();
+      await anamClient.streamToVideoElement("anam-video-stage");
+      anamAudioStreamRef.current = anamClient.createAgentAudioInputStream({
+        encoding: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+      });
 
-      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&voice=${encodeURIComponent(avatarProfile?.voiceName || "")}`;
+      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&voice=${encodeURIComponent(selectedVoiceName)}`;
       const socket = new WebSocket(socketUrl);
       browserSocketRef.current = socket;
       attachSocketHandlers(socket);
@@ -1231,12 +1203,13 @@ export function SessionPage({ slug }) {
         browserSocketRef.current = null;
       }
 
-      if (simliClientRef.current) {
+      if (anamClientRef.current) {
         try {
-          await simliClientRef.current.stop();
+          await anamClientRef.current.stopStreaming();
         } catch (_error) {}
-        simliClientRef.current = null;
+        anamClientRef.current = null;
       }
+      anamAudioStreamRef.current = null;
       setModelBuffer("");
       modelBufferRef.current = "";
       setUserBuffer("");
@@ -1405,8 +1378,7 @@ export function SessionPage({ slug }) {
               <span className="stage-badge-live" />
               {sessionPhase === "live" ? "Live rehearsal" : "Preparing room"}
             </div>
-            <video ref={videoRef} className="video-element" autoPlay playsInline />
-            <audio ref={audioRef} autoPlay />
+            <video id="anam-video-stage" ref={videoRef} className="video-element" autoPlay playsInline />
 
             {(sessionPhase === "preflight" || sessionPhase === "connecting") && (
               <div className="loading-overlay">
