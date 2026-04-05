@@ -564,34 +564,18 @@ export function SessionPage({ slug }) {
   useEffect(() => {
     if (!isInvestorAgent) return undefined;
 
-    const syncPip = () => {
-      if (document.visibilityState === "visible" || document.hasFocus()) {
-        void closePipWindow();
-        return;
-      }
+    if (screenShareState.status === "active" && sessionPhase === "live") {
+      void openPipWindow();
+    }
 
-      if (screenShareState.status === "active" && sessionPhase === "live") {
-        void openPipWindow();
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      syncPip();
-    };
-
-    const handleFocus = () => {
+    if (screenShareState.status !== "active") {
       void closePipWindow();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleFocus);
-
-    syncPip();
+    }
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleFocus);
-      void closePipWindow();
+      if (screenShareState.status !== "active") {
+        void closePipWindow();
+      }
     };
   }, [isInvestorAgent, screenShareState.status, sessionPhase]);
 
@@ -838,6 +822,7 @@ export function SessionPage({ slug }) {
       });
 
       await notifyScreenShareState(true, surface);
+      await openPipWindow();
     } catch (error) {
       const denied =
         error?.name === "NotAllowedError" ||
