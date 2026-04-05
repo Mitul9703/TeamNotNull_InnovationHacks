@@ -192,7 +192,7 @@ export function SessionPage({ slug }) {
   const codingLanguages = agent?.codingLanguages || ["JavaScript", "Pseudocode"];
   const customContextText = agentState?.customContextText || "";
   const companyUrl = agentState?.companyUrl || "";
-  const preparedCodingQuestion = agentState?.questionPrep?.result || null;
+  const preparedExternalResearch = agentState?.researchPrep?.result || null;
   const sessionName = agentState?.sessionName || "";
   const thread = (state.threads?.[slug] || []).find((item) => item.id === agentState.selectedThreadId) || null;
 
@@ -930,8 +930,8 @@ export function SessionPage({ slug }) {
           type: "session_context",
           customContext: customContextText,
           threadContext: thread?.memory?.hiddenGuidance || "",
-          companyUrl: isCodingAgent ? companyUrl : "",
-          codingQuestion: isCodingAgent ? preparedCodingQuestion : null,
+          companyUrl: companyUrl,
+          externalResearch: preparedExternalResearch,
           upload: upload?.contextText
             ? {
                 fileName: upload.fileName || "",
@@ -1292,9 +1292,10 @@ export function SessionPage({ slug }) {
             language: codeLanguage,
             finalCode: codeDraft,
             companyUrl: companyUrl.trim(),
-            interviewQuestion: preparedCodingQuestion,
+            interviewQuestion: preparedExternalResearch,
           }
         : null,
+      externalResearch: !isCodingAgent ? preparedExternalResearch : null,
       customContext: customContextText.trim(),
     });
     patchAgent(slug, (current) => ({
@@ -1317,7 +1318,7 @@ export function SessionPage({ slug }) {
         }),
         lastDurationLabel: formatDuration(elapsed),
       },
-      questionPrep: {
+      researchPrep: {
         status: "idle",
         result: null,
         error: "",

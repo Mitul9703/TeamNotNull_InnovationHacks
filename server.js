@@ -280,6 +280,15 @@ ${coding.finalCode?.trim() || "No code was saved."}
   `.trim();
 }
 
+function buildExternalResearchContext(externalResearch, companyUrl = "") {
+  if (!externalResearch?.markdown) return "";
+
+  return `
+Prepared external research brief:
+${companyUrl ? `Target company URL: ${companyUrl}\n` : ""}${externalResearch.markdown}
+  `.trim();
+}
+
 function normalizeEvaluationResult(agent, rawResult) {
   const criteria = agent.evaluationCriteria || [];
   const metricsByLabel = new Map(
@@ -685,7 +694,8 @@ async function fetchResourcesForBrief(brief) {
   return curated.slice(0, 4);
 }
 
-async function generateCodingQuestionFromCompany({
+async function generateExternalResearchForAgent({
+  agentSlug,
   companyUrl,
   customContext = "",
   uploadContextText = "",
@@ -703,6 +713,7 @@ async function generateCodingQuestionFromCompany({
   getGeminiApiKey("questionFinder");
 
   const companyName = companyNameFromUrl(normalizedUrl) || "the target company";
+  const agentConfig = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.custom;
   const searchLogs = [];
   const scrapeLogs = [];
   const scrapeCache = new Map();
@@ -720,7 +731,8 @@ async function generateCodingQuestionFromCompany({
         .slice(0, limit);
 
       searchLogs.push({ query, candidates });
-      console.log("[coding-question] search", {
+      console.log("[external-research] search", {
+        agentSlug,
         companyName,
         query,
         candidates: candidates.map((candidate) => ({
@@ -781,7 +793,8 @@ async function generateCodingQuestionFromCompany({
         weakSource,
         preview: enrichedPayload.markdown.slice(0, 400),
       });
-      console.log("[coding-question] scrape", {
+      console.log("[external-research] scrape", {
+        agentSlug,
         url: normalizedTarget,
         title: enrichedPayload.title,
         groundedProblemSignals,
@@ -811,7 +824,8 @@ async function generateCodingQuestionFromCompany({
   const codingQuestionAgent = createAgent({
     model: llm,
     tools: [searchTool, scrapeTool],
-    systemPrompt: `You are a careful research agent selecting exactly one grounded coding interview question for a live technical interview rehearsal.
+    systemPrompt: agentSlug === "coding"
+      ? `You are a careful research agent selecting exactly one grounded coding interview question for a live technical interview rehearsal.
 
 Workflow:
 - Search first for reputable public sources such as actual problem pages, company-tagged coding question lists, or well-known prep pages.
@@ -853,10 +867,62 @@ Requirements for the final markdown:
 - Do not add any prose before or after the markdown brief.
 - The Source section must include at least one URL.
 - The Evidence section should quote or summarize the strongest grounded details you scraped.
-- The Problem Statement, examples, constraints, and test cases should be usable directly as hidden context for a live interviewer.`,
+- The Problem Statement, examples, constraints, and test cases should be usable directly as hidden context for a live interviewer.`
+      : agentSlug === "investor"
+        ? `You are a careful research agent preparing hidden diligence context for an investor-style live pitch rehearsal.
+
+Workflow:
+- Search for authoritative public sources about the target company or product.
+- Prioritize the company site, product/pricing pages, launch pages, public docs, recent news, funding announcements, layoffs, outages, legal issues, partnerships, reviews, market signals, and public stock data if the company is public.
+- Scrape the most relevant pages and synthesize a concise investor-style brief.
+
+Selection rules:
+- Focus on information an investor would quietly use to pressure-test a founder: product clarity, differentiation, monetization, traction signals, major risk events, market timing, recent news, and any visible contradictions.
+- If a company had a major setback, controversy, outage, lawsuit, funding event, acquisition, or stock move that is publicly documented and relevant, include it.
+- Do not invent private metrics or hidden internal facts.
+- Prefer recent and materially relevant items over generic company descriptions.
+- You must return one final markdown brief for the session.
+
+Your final answer must be markdown only, with these sections in order:
+# Company Research Brief
+## Company Snapshot
+## Product and Monetization Signals
+## Recent News and Material Events
+## Market / Competitive Context
+## Investor Pressure Points
+## Source
+## Evidence
+
+Requirements:
+- Include at least one URL in Source.
+- Keep the brief concise, sharp, and useful for hidden investor questioning.
+- The Investor Pressure Points section should list what an investor should probe more based on the research.`
+        : `You are a careful research agent preparing hidden public-context notes for a live rehearsal session.
+
+Workflow:
+- Search for relevant public sources related to the target URL and the user's optional context.
+- Scrape the most promising pages and synthesize a concise brief the live agent can use silently.
+
+Selection rules:
+- The brief should reflect the user's scenario and optional context.
+- Focus on the most relevant publicly visible facts, messaging, product signals, risks, or discussion points.
+- Avoid unsupported claims and hidden-state assumptions.
+- You must return one final markdown brief for the session.
+
+Your final answer must be markdown only, with these sections in order:
+# External Context Brief
+## What this appears to be
+## Relevant Public Signals
+## Points worth probing
+## Source
+## Evidence
+
+Requirements:
+- Include at least one URL in Source.
+- Keep the brief concise and directly usable as hidden context for the live facilitator.`,
   });
 
-  const prompt = `
+  const prompt = agentSlug === "coding" ? `
 Target company URL: ${normalizedUrl}
 Target company name: ${companyName}
 
@@ -872,6 +938,32 @@ Use the optional interview context to bias toward role-relevant topics and diffi
 Do not settle for a blog post that only mentions a topic. Use it as a lead, then find the real problem page or enough concrete public detail to formulate the question.
 You must return one final question for the session.
 Use the tools to search, inspect sources, and return a single grounded question with examples and test cases if available.
+  `.trim() : agentSlug === "investor" ? `
+Target company URL: ${normalizedUrl}
+Target company name: ${companyName}
+
+Optional investor or pitch context:
+${customContext?.trim() || "None provided."}
+
+Optional uploaded document context:
+${uploadContextText?.trim() || "None provided."}
+
+Build one hidden investor-style diligence brief for this company or product.
+Search for public information an investor would want to know before a live pitch: recent news, funding, stock moves if public, pricing, product positioning, traction signals, competition, risks, and any material events that should influence questioning.
+The brief should help the live investor ask sharper questions without explicitly citing that hidden research to the founder.
+  `.trim() : `
+Target URL: ${normalizedUrl}
+Target entity name: ${companyName}
+Agent role: ${agentConfig.name}
+
+Optional scenario context:
+${customContext?.trim() || "None provided."}
+
+Optional uploaded document context:
+${uploadContextText?.trim() || "None provided."}
+
+Build one hidden external-context brief for this session.
+Search and scrape public information that seems most relevant to the scenario and the user's optional context, then summarize what the live agent should quietly know before the session starts.
   `.trim();
 
   const result = await codingQuestionAgent.invoke({
@@ -882,13 +974,14 @@ Use the tools to search, inspect sources, and return a single grounded question 
     ? [...result.messages].reverse().find((message) => message instanceof AIMessage)
     : null;
   const rawText = extractTextFromLangChainContent(finalMessage?.content || "");
-  console.log("[coding-question] final_raw", rawText);
+  console.log("[external-research] final_raw", { agentSlug, rawText });
 
   const candidateQuestion = normalizeCodingQuestionMarkdown(rawText, normalizedUrl);
   const scrapedSource = candidateQuestion?.sourceUrl
     ? scrapeCache.get(candidateQuestion.sourceUrl)
     : null;
-  console.log("[coding-question] parsed_candidate", {
+  console.log("[external-research] parsed_candidate", {
+    agentSlug,
     title: candidateQuestion?.title || null,
     sourceUrl: candidateQuestion?.sourceUrl || null,
     hasScrapedSource: Boolean(scrapedSource),
@@ -898,7 +991,8 @@ Use the tools to search, inspect sources, and return a single grounded question 
 
   const question = candidateQuestion || null;
 
-  console.log("[coding-question] generated", {
+  console.log("[external-research] generated", {
+    agentSlug,
     companyUrl: normalizedUrl,
     companyName,
     found: Boolean(question),
@@ -946,7 +1040,7 @@ function registerLiveBridge(server) {
     let sessionUploadContextText = "";
     let sessionUploadFileName = "";
     let sessionCompanyUrl = "";
-    let sessionCodingQuestion = null;
+    let sessionExternalResearch = null;
 
     function sendKickoff(text) {
       const kickoffText = (text || "").trim();
@@ -994,19 +1088,19 @@ ${agentSlug === "coding"
   : ""}
 `
         : "";
-      const preparedCodingQuestionContext =
-        agentSlug === "coding" && sessionCodingQuestion
+      const preparedExternalResearchContext =
+        sessionExternalResearch
           ? `
 
-Prepared coding interview problem for this session:
+Prepared hidden session research for this session:
 Company URL: ${sessionCompanyUrl || "Not provided"}
-${sessionCodingQuestion.markdown || "No grounded problem brief was available."}
+${sessionExternalResearch.markdown || "No grounded research brief was available."}
 
 Grounding rules for this problem:
-- Use this exact prepared problem as the interview question for this session.
-- Do not replace it with another question.
-- You may restate it naturally aloud, but stay faithful to these grounded details.
-- Do not mention the background research process unless the candidate explicitly asks.
+- Use this prepared research only as hidden steering context.
+- For coding, use the prepared problem brief as the interview question for this session.
+- For investor and custom, use the brief to shape sharper questions, follow-ups, and pressure points.
+- Do not explicitly mention the hidden research process unless the user directly asks.
 `
           : "";
       const hiddenThreadContext = sessionThreadContext
@@ -1042,7 +1136,7 @@ ${customTextContext}
 
 ${hiddenThreadContext}
 
-${preparedCodingQuestionContext}
+${preparedExternalResearchContext}
 
 ${extraContext}
           `.trim(),
@@ -1172,14 +1266,14 @@ ${extraContext}
           sessionUploadContextText = (msg.upload?.contextText || "").trim();
           sessionUploadFileName = (msg.upload?.fileName || "").trim();
           sessionCompanyUrl = (msg.companyUrl || "").trim();
-          sessionCodingQuestion = msg.codingQuestion || null;
+          sessionExternalResearch = msg.externalResearch || null;
           console.log("[live] session_context", {
             agentSlug,
             hasCustomContext: Boolean(sessionCustomContext),
             hasThreadContext: Boolean(sessionThreadContext),
             threadContextPreview: sessionThreadContext.slice(0, 240),
             uploadFileName: sessionUploadFileName || null,
-            hasCodingQuestion: Boolean(sessionCodingQuestion),
+            hasExternalResearch: Boolean(sessionExternalResearch),
             companyUrl: sessionCompanyUrl || null,
           });
 
@@ -1452,20 +1546,21 @@ ${rawText}`,
     }
   });
 
-  app.post("/api/company-coding-question", async (req, res) => {
+  app.post("/api/agent-external-context", async (req, res) => {
     try {
-      const { companyUrl, customContext, upload } = req.body || {};
+      const { agentSlug, companyUrl, customContext, upload } = req.body || {};
       const normalizedUrl = normalizeHttpUrl(companyUrl);
 
       if (!normalizedUrl) {
         return res.json({
           ok: true,
-          question: null,
+          research: null,
           message: "No valid company URL was provided.",
         });
       }
 
-      const question = await generateCodingQuestionFromCompany({
+      const research = await generateExternalResearchForAgent({
+        agentSlug: agentSlug || "custom",
         companyUrl: normalizedUrl,
         customContext: (customContext || "").trim(),
         uploadContextText: (upload?.contextText || "").trim(),
@@ -1473,15 +1568,15 @@ ${rawText}`,
 
       return res.json({
         ok: true,
-        question,
-        message: question
-          ? "Company-specific coding question fetched."
-          : "No grounded company-specific question could be confirmed.",
+        research,
+        message: research
+          ? "External research fetched."
+          : "No grounded external research could be confirmed.",
       });
     } catch (error) {
-      console.error("Coding question generation error:", error);
+      console.error("External research generation error:", error);
       return res.status(500).json({
-        error: "Failed to fetch a company-specific coding question.",
+        error: "Failed to fetch external research context.",
         details: error.message,
       });
     }

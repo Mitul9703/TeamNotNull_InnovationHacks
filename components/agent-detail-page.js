@@ -71,7 +71,7 @@ export function AgentDetailPage({ slug }) {
 
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
-  const questionPrep = agentState?.questionPrep || { status: "idle", result: null, error: "" };
+  const researchPrep = agentState?.researchPrep || { status: "idle", result: null, error: "" };
   const threads = state.threads?.[slug] || [];
   const selectedThread = threads.find((thread) => thread.id === agentState.selectedThreadId) || null;
   const pastSessions = state.sessions?.[slug] || [];
@@ -142,18 +142,18 @@ export function AgentDetailPage({ slug }) {
     patchAgent(slug, (current) => ({
       ...current,
       session: { ...current.session, status: "starting" },
-      questionPrep: slug === "coding"
+      researchPrep: ["coding", "investor", "custom"].includes(slug)
         ? { status: "idle", result: null, error: "" }
-        : current.questionPrep,
+        : current.researchPrep,
     }));
 
-    if (slug === "coding") {
+    if (["coding", "investor", "custom"].includes(slug)) {
       const companyUrl = (agentState.companyUrl || "").trim();
 
       if (companyUrl) {
         patchAgent(slug, (current) => ({
           ...current,
-          questionPrep: {
+          researchPrep: {
             status: "loading",
             result: null,
             error: "",
@@ -161,12 +161,13 @@ export function AgentDetailPage({ slug }) {
         }));
 
         try {
-          const response = await fetch(getApiUrl("/api/company-coding-question"), {
+          const response = await fetch(getApiUrl("/api/agent-external-context"), {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
+              agentSlug: slug,
               companyUrl,
               customContext: agentState.customContextText || "",
               upload: upload?.contextText
@@ -186,19 +187,19 @@ export function AgentDetailPage({ slug }) {
 
           patchAgent(slug, (current) => ({
             ...current,
-            questionPrep: {
-              status: payload.question ? "ready" : "idle",
-              result: payload.question || null,
-              error: payload.question ? "" : payload.message || "",
+            researchPrep: {
+              status: payload.research ? "ready" : "idle",
+              result: payload.research || null,
+              error: payload.research ? "" : payload.message || "",
             },
           }));
         } catch (error) {
           patchAgent(slug, (current) => ({
             ...current,
-            questionPrep: {
+            researchPrep: {
               status: "failed",
               result: null,
-              error: error.message || "Could not fetch a company-specific question.",
+              error: error.message || "Could not fetch the company-specific prep context.",
             },
           }));
         }
@@ -436,8 +437,8 @@ export function AgentDetailPage({ slug }) {
                       patchAgent(slug, (current) => ({
                         ...current,
                         companyUrl: event.target.value,
-                        questionPrep: current.questionPrep?.status === "loading"
-                          ? current.questionPrep
+                        researchPrep: current.researchPrep?.status === "loading"
+                          ? current.researchPrep
                           : { status: "idle", result: null, error: "" },
                       }))
                     }
@@ -449,10 +450,50 @@ export function AgentDetailPage({ slug }) {
                     If provided, PitchMirror will fetch one grounded company-style coding question before the session starts.
                   </p>
 
-                  {questionPrep.status === "failed" && questionPrep.error ? (
+                  {researchPrep.status === "failed" && researchPrep.error ? (
                     <div className="status-chip status-warning">
                       <span className="status-dot" />
-                      {questionPrep.error} The session can still continue with the default coding flow.
+                      {researchPrep.error} The session can still continue with the default coding flow.
+                    </div>
+                  ) : null}
+                </div>
+              )}
+              {["investor", "custom"].includes(slug) && (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <span className="metric-label" style={{ marginBottom: 0 }}>
+                    Company URL
+                  </span>
+                  <input
+                    className="context-textarea"
+                    type="text"
+                    value={agentState.companyUrl || ""}
+                    onChange={(event) =>
+                      patchAgent(slug, (current) => ({
+                        ...current,
+                        companyUrl: event.target.value,
+                        researchPrep: current.researchPrep?.status === "loading"
+                          ? current.researchPrep
+                          : { status: "idle", result: null, error: "" },
+                      }))
+                    }
+                    placeholder={
+                      slug === "investor"
+                        ? "Optional · company or product URL to research before the pitch"
+                        : "Optional · URL to research for richer generic context"
+                    }
+                    disabled={agentState.session.status === "active" || agentState.session.status === "starting"}
+                    style={{ minHeight: 52, resize: "none" }}
+                  />
+                  <p className="muted-copy" style={{ margin: 0, fontSize: "0.84rem" }}>
+                    {slug === "investor"
+                      ? "If provided, PitchMirror will gather investor-style external context such as news, company signals, and other public research before the session starts."
+                      : "If provided, PitchMirror will gather relevant public context for this scenario before the session starts."}
+                  </p>
+
+                  {researchPrep.status === "failed" && researchPrep.error ? (
+                    <div className="status-chip status-warning">
+                      <span className="status-dot" />
+                      {researchPrep.error} The session can still continue without external research.
                     </div>
                   ) : null}
                 </div>
@@ -555,8 +596,8 @@ export function AgentDetailPage({ slug }) {
           >
             {upload.status === "uploading" ? (
               <><div className="spinner spinner-sm spinner-inline" />Preparing upload…</>
-            ) : slug === "coding" && questionPrep.status === "loading" ? (
-              <><div className="spinner spinner-sm spinner-inline" />Fetching company questions…</>
+            ) : ["coding", "investor", "custom"].includes(slug) && researchPrep.status === "loading" ? (
+              <><div className="spinner spinner-sm spinner-inline" />Fetching company context…</>
             ) : agentState.session.status === "starting" ? (
               <><div className="spinner spinner-sm spinner-inline" />Starting session…</>
             ) : (
@@ -564,10 +605,14 @@ export function AgentDetailPage({ slug }) {
             )}
           </button>
 
-          {slug === "coding" && questionPrep.status === "loading" ? (
+          {["coding", "investor", "custom"].includes(slug) && researchPrep.status === "loading" ? (
             <div className="status-chip status-warning" style={{ marginTop: 12, width: "fit-content" }}>
               <div className="spinner spinner-xs" style={{ margin: 0 }} />
-              Finding a company-specific coding question…
+              {slug === "coding"
+                ? "Finding a company-specific coding question…"
+                : slug === "investor"
+                  ? "Researching public company context for the investor room…"
+                  : "Researching public context for this session…"}
             </div>
           ) : null}
         </div>

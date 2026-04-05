@@ -169,6 +169,14 @@ export function SessionDetailPage({ slug, sessionId }) {
               <p className="muted-copy" style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>{session.customContext}</p>
             </div>
           )}
+          {!session.coding && session.externalResearch?.markdown ? (
+            <div className="subtle-card" style={{ marginTop: 12 }}>
+              <span className="metric-label">External research brief</span>
+              <pre className="code-block" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+                {session.externalResearch.markdown}
+              </pre>
+            </div>
+          ) : null}
         </div>
 
         {/* Coding workspace (coding agent only) */}

@@ -58,7 +58,7 @@ function buildInitialAgentState() {
       threadName: "",
       customContextText: "",
       companyUrl: "",
-      questionPrep: {
+      researchPrep: {
         status: "idle",
         result: null,
         error: "",
@@ -92,10 +92,10 @@ function buildPersistedAgents(agents) {
       threadName: current.threadName || "",
       customContextText: current.customContextText || "",
       companyUrl: current.companyUrl || "",
-      questionPrep: {
-        status: current.questionPrep?.status || "idle",
-        result: current.questionPrep?.result || null,
-        error: current.questionPrep?.error || "",
+      researchPrep: {
+        status: current.researchPrep?.status || current.questionPrep?.status || "idle",
+        result: current.researchPrep?.result || current.questionPrep?.result || null,
+        error: current.researchPrep?.error || current.questionPrep?.error || "",
       },
       evaluation: {
         ...current.evaluation,
@@ -150,10 +150,10 @@ function sanitizeState(state) {
       threadName: saved.threadName || "",
       customContextText: saved.customContextText || "",
       companyUrl: saved.companyUrl || "",
-      questionPrep: {
-        status: saved.questionPrep?.status || "idle",
-        result: saved.questionPrep?.result || null,
-        error: saved.questionPrep?.error || "",
+      researchPrep: {
+        status: saved.researchPrep?.status || saved.questionPrep?.status || "idle",
+        result: saved.researchPrep?.result || saved.questionPrep?.result || null,
+        error: saved.researchPrep?.error || saved.questionPrep?.error || "",
       },
       evaluation: {
         ...initial[agent.slug].evaluation,
@@ -189,6 +189,7 @@ function sanitizeState(state) {
       sessionName: typeof session.sessionName === "string" ? session.sessionName : "",
       transcript: Array.isArray(session.transcript) ? session.transcript : [],
       upload: session.upload || null,
+      externalResearch: session.externalResearch || null,
       evaluation: session.evaluation || {
         status: "processing",
         startedAt: new Date().toISOString(),
