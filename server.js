@@ -349,67 +349,22 @@ function normalizeComparisonResult(agent, rawResult, currentEvaluation, baseline
   };
 }
 
-function buildTinyFishGoal({ brief, kind, agentSlug }) {
-  const isCoding = agentSlug === "coding";
-  const phrases = (brief.searchPhrases || []).filter(Boolean).join("; ");
-  const typeHint =
-    isCoding
-      ? kind === "video"
-        ? 'Set "type" to "youtube". Prefer strong coding-interview channels when relevant.'
-        : 'Set "type" to "leetcode", "article", or "website". Prefer LeetCode, NeetCode, or strong algorithm explainers.'
-      : kind === "video"
-        ? 'Set "type" to "youtube".'
-        : 'Set "type" to "article" or "website" depending on what the result is.';
-
-  return `
-Find high-quality ${kind === "video" ? "YouTube videos" : "articles and websites"} that help a user improve this ${isCoding ? "coding interview skill" : "communication skill"}.
-
-Topic: ${brief.topic}
-Improvement area: ${brief.improvement}
-Why it matters: ${brief.whyThisMatters}
-Search phrases to use: ${phrases || brief.topic}
-
-Return JSON matching this exact structure:
-{
-  "resources": [
-    {
-      "title": "string",
-      "url": "string",
-      "type": "string",
-      "source": "string",
-      "reason_relevant": "string"
-    }
-  ]
-}
-
-Rules:
-- Return exactly 2 resources.
-- Prefer practical, educational, high-signal content.
-- Avoid paywalled, spammy, or low-credibility results.
-- Avoid duplicate URLs or duplicate ideas.
-- ${typeHint}
-- "source" should be the publisher or website name.
-- "reason_relevant" should be a short sentence tailored to this improvement area.
-- Stop once you have 2 strong results.
-
-If you cannot find 2 good matches, return the best available results and keep the same JSON structure.
-  `.trim();
-}
-
-async function runTinyFish({ url, goal }) {
-  const response = await fetch("https://agent.tinyfish.ai/v1/automation/run", {
+async function searchFirecrawl(query, { limit = 6 } = {}) {
+  const response = await fetch("https://api.firecrawl.dev/v1/search", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": process.env.TINYFISH_API_KEY,
+      "Authorization": `Bearer ${process.env.FIRECRAWL_API_KEY}`,
     },
     body: JSON.stringify({
-      url,
-      goal,
-      browser_profile: "stealth",
-      api_integration: "pitchmirror",
-      feature_flags: {
-        enable_agent_memory: false,
+      query,
+      limit,
+      location: "United States",
+      timeout: 30000,
+      ignoreInvalidURLs: true,
+      scrapeOptions: {
+        formats: ["markdown"],
+        onlyMainContent: true,
       },
     }),
   });
@@ -417,26 +372,104 @@ async function runTinyFish({ url, goal }) {
   const payload = await response.json();
 
   if (!response.ok) {
-    throw new Error(payload?.error?.message || payload?.error || "Failed to run TinyFish search.");
+    console.error("[firecrawl-search] failed", {
+      status: response.status,
+      payload,
+    });
+    throw new Error(payload?.message || payload?.error || "Firecrawl search failed.");
   }
 
-  if (payload?.status && payload.status !== "COMPLETED") {
-    throw new Error(payload?.error?.message || "TinyFish run did not complete successfully.");
-  }
-
-  return payload?.result;
+  return Array.isArray(payload?.data) ? payload.data : [];
 }
 
-function parseTinyFishResources(result) {
-  if (!result) return [];
+async function scrapeWithFirecrawl(url) {
+  const response = await fetch("https://api.firecrawl.dev/v2/scrape", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.FIRECRAWL_API_KEY}`,
+    },
+    body: JSON.stringify({
+      url,
+      formats: ["markdown"],
+      onlyMainContent: true,
+      timeout: 30000,
+      blockAds: true,
+      proxy: "auto",
+    }),
+  });
 
-  let parsed = result;
+  const payload = await response.json();
 
-  if (typeof result === "string") {
-    parsed = JSON.parse(result);
+  if (!response.ok || payload?.success === false) {
+    throw new Error(payload?.error || payload?.message || "Firecrawl scrape failed.");
   }
 
-  const resources = Array.isArray(parsed.resources) ? parsed.resources : [];
+  return payload?.data || null;
+}
+
+function domainFromUrl(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeFirecrawlCandidates(results, fallbackType) {
+  return (results || [])
+    .map((item) => ({
+      title: (item.title || "").trim(),
+      url: (item.url || "").trim(),
+      source: domainFromUrl(item.url || ""),
+      snippet: (item.description || "").trim(),
+      scrapedSummary: (item.markdown || "").slice(0, 1800),
+      type: fallbackType,
+    }))
+    .filter((item) => item.title && item.url);
+}
+
+async function curateResourceCandidates(brief, candidates) {
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+  });
+
+  const prompt = `
+Topic: ${brief.topic}
+Improvement area: ${brief.improvement}
+Why it matters: ${brief.whyThisMatters}
+
+Candidate resources:
+${candidates.map((candidate, index) => `
+Candidate ${index + 1}
+- title: ${candidate.title}
+- url: ${candidate.url}
+- source: ${candidate.source}
+- type: ${candidate.type}
+- search snippet: ${candidate.snippet || "None"}
+- scraped summary: ${(candidate.scrapedSummary || "").slice(0, 1200) || "None"}
+`).join("\n")}
+
+Return exactly up to 4 resources in JSON.
+Prefer practical, educational, high-signal links.
+Avoid duplicates, spammy pages, and weak matches.
+Reason relevance specifically for this improvement area.
+Use type values like youtube, article, website, or leetcode.
+  `.trim();
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      systemInstruction:
+        "You curate improvement resources for a practice app. Select the strongest links from the provided candidates only. Never invent URLs. Prefer practical, credible, and directly relevant resources.",
+      responseMimeType: "application/json",
+      responseSchema: tinyFishArticlesSchema,
+    },
+  });
+
+  const parsed = JSON.parse((response.text || "").trim());
+  const resources = Array.isArray(parsed?.resources) ? parsed.resources : [];
 
   return resources
     .map((resource) => ({
@@ -449,41 +482,61 @@ function parseTinyFishResources(result) {
     .filter((resource) => resource.title && resource.url);
 }
 
-async function fetchTinyFishResourcesForBrief(brief) {
-  const videoGoal = buildTinyFishGoal({ brief, kind: "video", agentSlug: brief.agentSlug });
-  const articleGoal = buildTinyFishGoal({ brief, kind: "article", agentSlug: brief.agentSlug });
+async function fetchResourcesForBrief(brief) {
+  const phrases = (brief.searchPhrases || []).filter(Boolean);
+  const primaryPhrase = phrases[0] || brief.topic || brief.improvement;
+  const secondaryPhrase = phrases[1] || brief.improvement || brief.topic;
+  const isCoding = brief.agentSlug === "coding";
 
-  const [videoResult, articleResult] = await Promise.all([
-    runTinyFish({
-      url:
-        brief.agentSlug === "coding"
-          ? "https://www.youtube.com/results?search_query=leetcode+patterns"
-          : "https://www.youtube.com/results?search_query=public+speaking",
-      goal: videoGoal,
-    }),
-    runTinyFish({
-      url:
-        brief.agentSlug === "coding"
-          ? "https://leetcode.com/problemset/"
-          : "https://duckduckgo.com/",
-      goal: articleGoal,
-    }),
+  const videoQuery = isCoding
+    ? `${primaryPhrase} site:youtube.com coding interview OR neetcode OR leetcode`
+    : `${primaryPhrase} site:youtube.com`;
+  const articleQuery = isCoding
+    ? `${secondaryPhrase} site:leetcode.com OR site:neetcode.io OR site:geeksforgeeks.org`
+    : `${secondaryPhrase}`;
+
+  const [videoResults, articleResults] = await Promise.all([
+    searchFirecrawl(videoQuery, { limit: 5 }),
+    searchFirecrawl(articleQuery, { limit: 6 }),
   ]);
 
-  const merged = [
-    ...parseTinyFishResources(videoResult),
-    ...parseTinyFishResources(articleResult),
+  const rawCandidates = [
+    ...normalizeFirecrawlCandidates(videoResults, "youtube"),
+    ...normalizeFirecrawlCandidates(articleResults, isCoding ? "website" : "article"),
   ];
 
+  const deduped = [];
   const seen = new Set();
+  for (const candidate of rawCandidates) {
+    if (seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    deduped.push(candidate);
+    if (deduped.length >= 6) break;
+  }
 
-  return merged.filter((resource) => {
-    if (seen.has(resource.url)) {
-      return false;
-    }
-    seen.add(resource.url);
-    return true;
-  });
+  const enriched = await Promise.all(
+    deduped.map(async (candidate) => {
+      if (candidate.scrapedSummary) {
+        return candidate;
+      }
+      try {
+        const scraped = await scrapeWithFirecrawl(candidate.url);
+        return {
+          ...candidate,
+          source:
+            candidate.source ||
+            scraped?.metadata?.title ||
+            domainFromUrl(candidate.url),
+          scrapedSummary: (scraped?.markdown || "").slice(0, 1800),
+        };
+      } catch (_error) {
+        return candidate;
+      }
+    }),
+  );
+
+  const curated = await curateResourceCandidates(brief, enriched);
+  return curated.slice(0, 4);
 }
 
 function registerLiveBridge(server) {
@@ -1304,9 +1357,9 @@ Instructions:
 
   app.post("/api/session-resources", async (req, res) => {
     try {
-      if (!process.env.TINYFISH_API_KEY) {
+      if (!process.env.FIRECRAWL_API_KEY) {
         return res.status(400).json({
-          error: "TinyFish API key is not configured.",
+          error: "Firecrawl API key must be configured.",
         });
       }
 
@@ -1322,7 +1375,7 @@ Instructions:
 
       const topics = await Promise.all(
         briefs.map(async (brief, index) => {
-          const items = await fetchTinyFishResourcesForBrief({
+          const items = await fetchResourcesForBrief({
             ...brief,
             agentSlug,
           });
@@ -1341,7 +1394,7 @@ Instructions:
         topics,
       });
     } catch (error) {
-      console.error("TinyFish resource error:", error);
+      console.error("Resource search error:", error);
       return res.status(500).json({
         error: "Failed to fetch improvement resources.",
         details: error.message,
