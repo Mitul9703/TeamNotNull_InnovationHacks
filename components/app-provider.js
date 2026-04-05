@@ -459,6 +459,116 @@ export function AppProvider({ children }) {
     [state.sessions, state.threads],
   );
 
+  const deleteSession = useCallback(
+    (slug, sessionId) => {
+      const session = (state.sessions?.[slug] || []).find((item) => item.id === sessionId);
+      if (!session) return;
+
+      const key = `${slug}:${session.id}`;
+      const evaluationController = evaluationJobsRef.current.get(key);
+      if (evaluationController) {
+        evaluationController.abort();
+        evaluationJobsRef.current.delete(key);
+      }
+      const resourceController = resourceJobsRef.current.get(key);
+      if (resourceController) {
+        resourceController.abort();
+        resourceJobsRef.current.delete(key);
+      }
+      const comparisonController = comparisonJobsRef.current.get(key);
+      if (comparisonController) {
+        comparisonController.abort();
+        comparisonJobsRef.current.delete(key);
+      }
+
+      setState((current) => ({
+        ...current,
+        sessions: {
+          ...current.sessions,
+          [slug]: (current.sessions?.[slug] || []).filter((item) => item.id !== sessionId),
+        },
+        threads: {
+          ...current.threads,
+          [slug]: (current.threads?.[slug] || []).map((thread) =>
+            thread.id === session.threadId
+              ? {
+                  ...thread,
+                  updatedAt: new Date().toISOString(),
+                  sessionIds: (thread.sessionIds || []).filter((id) => id !== sessionId),
+                  evaluation: {
+                    ...thread.evaluation,
+                    status: (thread.sessionIds || []).filter((id) => id !== sessionId).length
+                      ? "processing"
+                      : "idle",
+                    result: (thread.sessionIds || []).filter((id) => id !== sessionId).length
+                      ? thread.evaluation?.result
+                      : null,
+                    error: "",
+                  },
+                }
+              : thread,
+          ),
+        },
+      }));
+    },
+    [state.sessions],
+  );
+
+  const deleteThread = useCallback(
+    (slug, threadId) => {
+      const thread = (state.threads?.[slug] || []).find((item) => item.id === threadId);
+      if (!thread) return;
+
+      (thread.sessionIds || []).forEach((sessionId) => {
+        const key = `${slug}:${sessionId}`;
+        const evaluationController = evaluationJobsRef.current.get(key);
+        if (evaluationController) {
+          evaluationController.abort();
+          evaluationJobsRef.current.delete(key);
+        }
+        const resourceController = resourceJobsRef.current.get(key);
+        if (resourceController) {
+          resourceController.abort();
+          resourceJobsRef.current.delete(key);
+        }
+        const comparisonController = comparisonJobsRef.current.get(key);
+        if (comparisonController) {
+          comparisonController.abort();
+          comparisonJobsRef.current.delete(key);
+        }
+      });
+
+      const threadController = threadJobsRef.current.get(`${slug}:${threadId}`);
+      if (threadController) {
+        threadController.abort();
+        threadJobsRef.current.delete(`${slug}:${threadId}`);
+      }
+
+      setState((current) => ({
+        ...current,
+        agents: {
+          ...current.agents,
+          [slug]: {
+            ...current.agents[slug],
+            selectedThreadId:
+              current.agents[slug]?.selectedThreadId === threadId
+                ? ""
+                : current.agents[slug]?.selectedThreadId || "",
+          },
+        },
+        threads: {
+          ...current.threads,
+          [slug]: (current.threads?.[slug] || []).filter((item) => item.id !== threadId),
+        },
+        sessions: {
+          ...current.sessions,
+          [slug]: (current.sessions?.[slug] || []).filter((session) => session.threadId !== threadId),
+        },
+      }));
+    },
+    [state.threads],
+  );
+
   const runResourceJob = useCallback(
     async (session) => {
       const jobKey = `${session.agentSlug}:${session.id}`;
@@ -1013,6 +1123,8 @@ export function AppProvider({ children }) {
       createSessionRecord,
       createThread,
       selectThread,
+      deleteThread,
+      deleteSession,
       runThreadEvaluationJob,
       dismissToast,
       toasts,
@@ -1031,6 +1143,8 @@ export function AppProvider({ children }) {
       state,
       createThread,
       selectThread,
+      deleteThread,
+      deleteSession,
       runThreadEvaluationJob,
       toasts,
     ],

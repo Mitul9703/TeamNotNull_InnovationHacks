@@ -495,16 +495,20 @@ export function SessionPage({ slug }) {
         }
         .pip-actions {
           display: grid;
-          grid-template-columns: 1fr;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 10px;
         }
         button {
-          min-height: 42px;
+          min-height: 46px;
           border: 0;
           border-radius: 14px;
           color: #fff;
           cursor: pointer;
           font: inherit;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
         }
         .pip-mute {
           background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
@@ -514,6 +518,11 @@ export function SessionPage({ slug }) {
         }
         .pip-end {
           background: linear-gradient(180deg, #f06b63 0%, #c5221f 100%);
+        }
+        .pip-icon {
+          width: 18px;
+          height: 18px;
+          stroke: currentColor;
         }
       `;
       pipDocument.head.appendChild(style);
@@ -550,24 +559,37 @@ export function SessionPage({ slug }) {
       const actions = pipDocument.createElement("div");
       actions.className = "pip-actions";
 
+      const getMuteIcon = (muted) =>
+        muted
+          ? `<svg class="pip-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`
+          : `<svg class="pip-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`;
+
       const muteButton = pipDocument.createElement("button");
       muteButton.className = "pip-mute";
-      muteButton.textContent = mutedStateRef.current ? "Unmute" : "Mute";
+      muteButton.innerHTML = getMuteIcon(mutedStateRef.current);
+      muteButton.setAttribute("aria-label", mutedStateRef.current ? "Unmute microphone" : "Mute microphone");
+      muteButton.title = mutedStateRef.current ? "Unmute microphone" : "Mute microphone";
       muteButton.addEventListener("click", () => {
         toggleMute();
-        muteButton.textContent = mutedStateRef.current ? "Unmute" : "Mute";
+        muteButton.innerHTML = getMuteIcon(mutedStateRef.current);
+        muteButton.setAttribute("aria-label", mutedStateRef.current ? "Unmute microphone" : "Mute microphone");
+        muteButton.title = mutedStateRef.current ? "Unmute microphone" : "Mute microphone";
       });
 
       const stopButton = pipDocument.createElement("button");
       stopButton.className = "pip-stop";
-      stopButton.textContent = "Stop sharing";
+      stopButton.innerHTML = `<svg class="pip-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
+      stopButton.setAttribute("aria-label", "Stop sharing");
+      stopButton.title = "Stop sharing";
       stopButton.addEventListener("click", () => {
         void stopScreenShare();
       });
 
       const endButton = pipDocument.createElement("button");
       endButton.className = "pip-end";
-      endButton.textContent = "End call";
+      endButton.innerHTML = `<svg class="pip-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2"></path><path d="M8 13l-1.5 4"></path><path d="M16 13l1.5 4"></path><path d="M9 13h6"></path></svg>`;
+      endButton.setAttribute("aria-label", "End call");
+      endButton.title = "End call";
       endButton.addEventListener("click", () => {
         void endSession();
       });
@@ -1694,6 +1716,12 @@ export function SessionPage({ slug }) {
               </div>
             ) : null}
             <button type="button" className="btn btn-danger" onClick={endSession}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 15c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2"/>
+                <path d="M8 13l-1.5 4"/>
+                <path d="M16 13l1.5 4"/>
+                <path d="M9 13h6"/>
+              </svg>
               End call
             </button>
           </div>

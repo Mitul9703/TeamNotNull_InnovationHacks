@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AGENT_LOOKUP } from "../lib/agents";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
@@ -77,8 +78,143 @@ function CollapsibleList({ items, initialMax = 4, label }) {
   );
 }
 
+function renderInlineMarkdown(text) {
+  const parts = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith("`")) {
+      parts.push(<code key={`${match.index}-code`}>{token.slice(1, -1)}</code>);
+    } else if (token.startsWith("**")) {
+      parts.push(<strong key={`${match.index}-strong`}>{token.slice(2, -2)}</strong>);
+    }
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length ? parts : text;
+}
+
+function MarkdownRenderer({ content }) {
+  if (!content?.trim()) {
+    return <p className="muted-copy" style={{ margin: 0 }}>No content available.</p>;
+  }
+
+  const blocks = [];
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      const codeLines = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      blocks.push({ type: "code", content: codeLines.join("\n") });
+      index += 1;
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      blocks.push({
+        type: "heading",
+        level: headingMatch[1].length,
+        content: headingMatch[2].trim(),
+      });
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items = [];
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        items.push(lines[index].trim().replace(/^[-*]\s+/, ""));
+        index += 1;
+      }
+      blocks.push({ type: "list", items });
+      continue;
+    }
+
+    const paragraphLines = [];
+    while (index < lines.length) {
+      const current = lines[index].trim();
+      if (!current || current.startsWith("```") || /^(#{1,6})\s+/.test(current) || /^[-*]\s+/.test(current)) {
+        break;
+      }
+      paragraphLines.push(current);
+      index += 1;
+    }
+    blocks.push({ type: "paragraph", content: paragraphLines.join(" ") });
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 12, marginTop: 10 }}>
+      {blocks.map((block, blockIndex) => {
+        if (block.type === "heading") {
+          const style = {
+            margin: 0,
+            fontSize: block.level <= 2 ? "1rem" : "0.9rem",
+            fontWeight: 700,
+            letterSpacing: "-0.02em",
+          };
+          return <div key={blockIndex} style={style}>{block.content}</div>;
+        }
+
+        if (block.type === "list") {
+          return (
+            <div className="collapsible-list" key={blockIndex}>
+              {block.items.map((item, itemIndex) => (
+                <div className="collapsible-list-item" key={itemIndex}>
+                  {renderInlineMarkdown(item)}
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (block.type === "code") {
+          return (
+            <pre className="code-block" style={{ margin: 0, whiteSpace: "pre-wrap" }} key={blockIndex}>
+              {block.content}
+            </pre>
+          );
+        }
+
+        return (
+          <p className="muted-copy" style={{ margin: 0, fontSize: "0.92rem" }} key={blockIndex}>
+            {renderInlineMarkdown(block.content)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SessionDetailPage({ slug, sessionId }) {
-  const { state, requestResourceFetch, requestSessionComparison } = useAppState();
+  const router = useRouter();
+  const { state, requestResourceFetch, requestSessionComparison, deleteSession } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const session = (state.sessions?.[slug] || []).find((item) => item.id === sessionId);
 
@@ -140,6 +276,31 @@ export function SessionDetailPage({ slug, sessionId }) {
               ⏱ {session.durationLabel}
             </span>
           </div>
+          <div className="button-row" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="btn btn-icon btn-danger-icon"
+              aria-label="Delete session"
+              title="Delete session"
+              onClick={() => {
+                const confirmed = window.confirm(`Delete the session "${session.sessionName || "Untitled session"}"?`);
+                if (!confirmed) return;
+                const target = session.threadId
+                  ? `/agents/${slug}/threads/${session.threadId}`
+                  : `/agents/${slug}`;
+                deleteSession(slug, session.id);
+                router.push(target);
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Session Info card */}
@@ -172,9 +333,7 @@ export function SessionDetailPage({ slug, sessionId }) {
           {!session.coding && session.externalResearch?.markdown ? (
             <div className="subtle-card" style={{ marginTop: 12 }}>
               <span className="metric-label">External research brief</span>
-              <pre className="code-block" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
-                {session.externalResearch.markdown}
-              </pre>
+              <MarkdownRenderer content={session.externalResearch.markdown} />
             </div>
           ) : null}
         </div>
@@ -200,9 +359,7 @@ export function SessionDetailPage({ slug, sessionId }) {
                 <p className="muted-copy" style={{ margin: "6px 0 0", fontSize: "0.9rem" }}>
                   <strong>{session.coding.interviewQuestion.title || "Curated coding question"}</strong>
                 </p>
-                <pre className="code-block" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
-                  {session.coding.interviewQuestion.markdown || "No grounded problem brief was saved."}
-                </pre>
+                <MarkdownRenderer content={session.coding.interviewQuestion.markdown || "No grounded problem brief was saved."} />
               </div>
             ) : null}
             <div className="subtle-card">

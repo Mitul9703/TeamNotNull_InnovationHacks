@@ -260,8 +260,44 @@ button {
 }
 
 .btn-danger {
-  background: linear-gradient(180deg, #ef6a5f 0%, var(--danger) 100%);
+  background: #ea4335;
   color: #fff;
+  border-color: transparent;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(234, 67, 53, 0.24);
+}
+
+.btn-icon {
+  min-width: 48px;
+  width: 48px;
+  padding: 0;
+  gap: 0;
+  border-radius: 999px;
+}
+
+.btn-danger-icon {
+  background: #ea4335;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(234, 67, 53, 0.2);
+}
+
+.btn-icon svg {
+  flex-shrink: 0;
+}
+
+.btn-danger:hover:not(:disabled),
+.btn-danger-icon:hover:not(:disabled) {
+  background: #d93025;
+  border-color: transparent;
+  box-shadow: 0 10px 22px rgba(217, 48, 37, 0.3);
+}
+
+.btn-danger:active:not(:disabled),
+.btn-danger-icon:active:not(:disabled) {
+  transform: translateY(0);
+  background: #c5221f;
+  box-shadow: 0 4px 10px rgba(197, 34, 31, 0.24);
 }
 
 .grid-4 {
