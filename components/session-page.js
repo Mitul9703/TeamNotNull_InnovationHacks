@@ -15,6 +15,7 @@ import { AGENT_LOOKUP } from "../lib/agents";
 import { getApiUrl, getBackendWsUrl } from "../lib/client-config";
 import { AppShell } from "./shell";
 import { useAppState } from "./app-provider";
+//Logic to start the session
 
 function floatTo16BitPCM(float32Array) {
   const int16Array = new Int16Array(float32Array.length);
