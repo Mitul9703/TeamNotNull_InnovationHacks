@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { AppShell } from "./shell";
 
 const STEPS = [
@@ -22,8 +23,46 @@ const STEPS = [
 ];
 
 export function LandingPage() {
+  const [showLimits, setShowLimits] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const dismissed = window.localStorage.getItem("pitchmirror-demo-limits-dismissed");
+    if (!dismissed) {
+      setShowLimits(true);
+    }
+  }, []);
+
+  function dismissLimits() {
+    setShowLimits(false);
+    window.localStorage.setItem("pitchmirror-demo-limits-dismissed", "1");
+  }
+
   return (
     <AppShell>
+      {showLimits ? (
+        <div className="landing-modal-backdrop" role="presentation">
+          <div className="landing-modal" role="dialog" aria-modal="true" aria-labelledby="demo-limits-title">
+            <div className="eyebrow">Public demo</div>
+            <h2 id="demo-limits-title" style={{ margin: "14px 0 8px", fontSize: "1.4rem" }}>
+              Demo limits before you start
+            </h2>
+            <p className="muted-copy" style={{ margin: 0 }}>
+              This public build allows up to 2 live sessions per browser per day, with a 2-minute cap per session.
+              Investor and Coding are the best agents to try first.
+            </p>
+            <div className="button-row" style={{ marginTop: 18 }}>
+              <button type="button" className="btn btn-primary" onClick={dismissLimits}>
+                Got it
+              </button>
+              <Link href="/agents" className="btn btn-secondary" onClick={dismissLimits}>
+                View agents
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Hero — centered */}
       <div className="hero-centered">
         <h1 className="hero-title">

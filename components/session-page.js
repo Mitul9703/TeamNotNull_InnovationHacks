@@ -143,6 +143,7 @@ function getCodingLanguageExtensions(language) {
 }
 
 export function SessionPage({ slug }) {
+  const DEMO_SESSION_CAP_SECONDS = 120;
   const router = useRouter();
   const { state, patchAgent, createSessionRecord } = useAppState();
   const agent = AGENT_LOOKUP[slug];
@@ -164,6 +165,7 @@ export function SessionPage({ slug }) {
   const [userBuffer, setUserBuffer] = useState("");
   const [transcript, setTranscript] = useState([]);
   const [elapsed, setElapsed] = useState(0);
+  const [sessionCapSeconds, setSessionCapSeconds] = useState(DEMO_SESSION_CAP_SECONDS);
   const [startAttempt, setStartAttempt] = useState(0);
   const [codeLanguage, setCodeLanguage] = useState(codingLanguages[0] || "JavaScript");
   const [codeDraft, setCodeDraft] = useState("");
@@ -350,6 +352,13 @@ export function SessionPage({ slug }) {
       window.clearInterval(timerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (sessionPhase !== "live") return;
+    if (elapsed < sessionCapSeconds) return;
+    setStatusText("This public demo session reached the 2-minute cap.");
+    void endSession();
+  }, [elapsed, sessionCapSeconds, sessionPhase]);
 
   useEffect(() => {
     const element = transcriptListRef.current;
@@ -1070,6 +1079,7 @@ export function SessionPage({ slug }) {
       if (!tokenResponse.ok || !tokenPayload?.sessionToken) {
         throw new Error(tokenPayload?.details || tokenPayload?.error || "Failed to create Anam session.");
       }
+      setSessionCapSeconds(tokenPayload?.sessionCapSeconds || DEMO_SESSION_CAP_SECONDS);
       const selectedVoiceName = tokenPayload?.avatarProfile?.voiceName || "";
 
       if (!videoRef.current) {

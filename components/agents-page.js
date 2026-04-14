@@ -8,6 +8,16 @@ import { AppShell } from "./shell";
 const PILL_COLOR = "pill-accent";
 
 export function AgentsPage() {
+  const orderedAgents = [...AGENTS].sort((left, right) => {
+    const priority = { investor: 0, coding: 1 };
+    const leftPriority = priority[left.slug] ?? 10;
+    const rightPriority = priority[right.slug] ?? 10;
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+    return 0;
+  });
+
   return (
     <AppShell>
       <div className="page-header">
@@ -18,14 +28,15 @@ export function AgentsPage() {
       </div>
 
       <div className="agents-grid">
-        {AGENTS.map((agent) => {
+        {orderedAgents.map((agent) => {
           const isCustom = agent.slug === "custom";
           const isCoding = agent.slug === "coding";
+          const isMustTry = agent.slug === "investor" || agent.slug === "coding";
 
           return (
             <Link
               href={`/agents/${agent.slug}`}
-              className={`agent-card${isCustom ? " agent-card-custom" : ""}`}
+              className={`agent-card${isCustom ? " agent-card-custom" : ""}${isMustTry ? " agent-card-featured" : ""}`}
               key={agent.slug}
             >
               {/* Header row: role badge + duration pill */}
@@ -35,7 +46,10 @@ export function AgentsPage() {
               </div>
 
               {/* Agent name */}
-              <h2 className="agent-title">{agent.name}</h2>
+              <div className="agent-name-row">
+                <h2 className="agent-title">{agent.name}</h2>
+                {isMustTry ? <span className="agent-inline-flag">Must try</span> : null}
+              </div>
 
               {/* Short description */}
               <p className="agent-blurb">{agent.description}</p>

@@ -1,5 +1,6 @@
 import http from "node:http";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -27,24 +28,109 @@ const port = Number(process.env.PORT || 3000);
 const nextApp = next({ dev, hostname, port });
 const handle = nextApp.getRequestHandler();
 const upload = multer({ dest: "uploads/" });
+const DEMO_BROWSER_SESSION_LIMIT = 2;
+const DEMO_IP_SESSION_LIMIT = 4;
+const DEMO_SESSION_CAP_SECONDS = 120;
+
+const roundRobinState = new Map();
+const providerUsageState = new Map();
+
+function parseCookies(cookieHeader = "") {
+  return cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((acc, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex === -1) {
+        return acc;
+      }
+      const key = decodeURIComponent(part.slice(0, separatorIndex).trim());
+      const value = decodeURIComponent(part.slice(separatorIndex + 1).trim());
+      acc[key] = value;
+      return acc;
+    }, {});
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getMonthKey() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function getOrCreateUsageCounter(scopeKey, periodKey) {
+  const compositeKey = `${scopeKey}:${periodKey}`;
+  if (!providerUsageState.has(compositeKey)) {
+    providerUsageState.set(compositeKey, { counts: new Map() });
+  }
+  return providerUsageState.get(compositeKey);
+}
+
+function pickKeyFromPool(scopeKey, keys, limit, periodKey) {
+  if (!Array.isArray(keys) || !keys.length) {
+    throw new Error(`No API keys configured for ${scopeKey}.`);
+  }
+
+  const usage = getOrCreateUsageCounter(scopeKey, periodKey);
+  const startIndex = roundRobinState.get(scopeKey) || 0;
+
+  for (let offset = 0; offset < keys.length; offset += 1) {
+    const index = (startIndex + offset) % keys.length;
+    const key = keys[index];
+    const currentCount = usage.counts.get(key) || 0;
+
+    if (currentCount < limit) {
+      usage.counts.set(key, currentCount + 1);
+      roundRobinState.set(scopeKey, (index + 1) % keys.length);
+      return key;
+    }
+  }
+
+  throw new Error(`All API keys for ${scopeKey} are exhausted for ${periodKey}.`);
+}
 
 const GEMINI_ENV_BY_TASK = {
-  live: ["GEMINI_LIVE_API_KEY", "GEMINI_API_KEY"],
-  questionFinder: ["GEMINI_QUESTION_FINDER_API_KEY", "GEMINI_API_KEY"],
-  evaluation: ["GEMINI_EVALUATION_API_KEY", "GEMINI_API_KEY"],
-  resources: ["GEMINI_RESOURCE_CURATION_API_KEY", "GEMINI_API_KEY"],
-  uploadPrep: ["GEMINI_UPLOAD_PREP_API_KEY", "GEMINI_API_KEY"],
+  live: ["GEMINI_LIVE_API_KEYS", "GEMINI_LIVE_API_KEY", "GEMINI_API_KEY"],
+  questionFinder: ["GEMINI_QUESTION_FINDER_API_KEYS", "GEMINI_QUESTION_FINDER_API_KEY", "GEMINI_API_KEY"],
+  evaluation: ["GEMINI_EVALUATION_API_KEYS", "GEMINI_EVALUATION_API_KEY", "GEMINI_API_KEY"],
+  resources: ["GEMINI_RESOURCE_CURATION_API_KEYS", "GEMINI_RESOURCE_CURATION_API_KEY", "GEMINI_API_KEY"],
+  uploadPrep: ["GEMINI_UPLOAD_PREP_API_KEYS", "GEMINI_UPLOAD_PREP_API_KEY", "GEMINI_API_KEY"],
 };
+
+function getEnvKeyPool(candidates) {
+  for (const envName of candidates) {
+    const value = (process.env[envName] || "").trim();
+    if (!value) continue;
+    const keys = value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (keys.length) {
+      return keys;
+    }
+  }
+  return [];
+}
 
 function getGeminiApiKey(task) {
   const candidates = GEMINI_ENV_BY_TASK[task] || ["GEMINI_API_KEY"];
-  for (const envName of candidates) {
-    const value = (process.env[envName] || "").trim();
-    if (value) {
-      return value;
-    }
+  const keys = getEnvKeyPool(candidates);
+  if (!keys.length) {
+    throw new Error(`Missing Gemini API key for task "${task}". Checked: ${candidates.join(", ")}`);
   }
-  throw new Error(`Missing Gemini API key for task "${task}". Checked: ${candidates.join(", ")}`);
+  const periodKey = getTodayKey();
+  return pickKeyFromPool(`gemini:${task}`, keys, 20, periodKey);
+}
+
+function getAnamApiKey() {
+  const keys = getEnvKeyPool(["ANAM_API_KEYS", "ANAM_API_KEY"]);
+  if (!keys.length) {
+    throw new Error("Missing Anam API key. Checked: ANAM_API_KEYS, ANAM_API_KEY");
+  }
+  const periodKey = getMonthKey();
+  return pickKeyFromPool("anam", keys, 15, periodKey);
 }
 
 const ANAM_AVATAR_PROFILES = [
@@ -1507,6 +1593,26 @@ async function startServer() {
   const app = express();
   app.use(cors());
   app.use(express.json());
+  app.use((req, res, next) => {
+    const cookies = parseCookies(req.headers.cookie || "");
+    let anonId = cookies.pm_anon_id;
+
+    if (!anonId) {
+      anonId = crypto.randomUUID();
+      res.setHeader(
+        "Set-Cookie",
+        `pm_anon_id=${encodeURIComponent(anonId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+      );
+    }
+
+    req.pmAnonId = anonId;
+    req.pmIpKey =
+      (req.headers["x-forwarded-for"] || "")
+        .toString()
+        .split(",")[0]
+        .trim() || req.socket.remoteAddress || "unknown";
+    next();
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, hasDeck: false });
@@ -1516,15 +1622,27 @@ async function startServer() {
     try {
       const { agentSlug } = req.body || {};
       const agent = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
-      const anamApiKey = process.env.ANAM_API_KEY;
-      const avatarProfile = pickRandomAnamProfile();
+      const browserDayUsage = getOrCreateUsageCounter("browser-live-starts", getTodayKey());
+      const ipDayUsage = getOrCreateUsageCounter("ip-live-starts", getTodayKey());
+      const browserCount = browserDayUsage.counts.get(req.pmAnonId) || 0;
+      const ipCount = ipDayUsage.counts.get(req.pmIpKey) || 0;
 
-      if (!anamApiKey) {
-        return res.status(500).json({
-          error: "Missing Anam configuration.",
-          details: "ANAM_API_KEY is not set.",
+      if (browserCount >= DEMO_BROWSER_SESSION_LIMIT) {
+        return res.status(429).json({
+          error: "Daily demo session limit reached.",
+          details: "This public demo allows up to 2 live sessions per browser per day.",
         });
       }
+
+      if (ipCount >= DEMO_IP_SESSION_LIMIT) {
+        return res.status(429).json({
+          error: "Daily IP session limit reached.",
+          details: "This public demo has reached the live-session cap for your network today.",
+        });
+      }
+
+      const anamApiKey = getAnamApiKey();
+      const avatarProfile = pickRandomAnamProfile();
 
       const response = await fetch("https://api.anam.ai/v1/auth/session-token", {
         method: "POST",
@@ -1549,9 +1667,13 @@ async function startServer() {
         });
       }
 
+      browserDayUsage.counts.set(req.pmAnonId, browserCount + 1);
+      ipDayUsage.counts.set(req.pmIpKey, ipCount + 1);
+
       return res.json({
         ok: true,
         sessionToken: payload.sessionToken,
+        sessionCapSeconds: DEMO_SESSION_CAP_SECONDS,
         avatarProfile: {
           name: avatarProfile.name,
           avatarId: avatarProfile.avatarId,
