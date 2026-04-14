@@ -1079,6 +1079,9 @@ export function SessionPage({ slug }) {
       if (!tokenResponse.ok || !tokenPayload?.sessionToken) {
         throw new Error(tokenPayload?.details || tokenPayload?.error || "Failed to create Anam session.");
       }
+      if (!tokenPayload?.liveAdmissionToken) {
+        throw new Error("Failed to authorize the live demo session.");
+      }
       setSessionCapSeconds(tokenPayload?.sessionCapSeconds || DEMO_SESSION_CAP_SECONDS);
       const selectedVoiceName = tokenPayload?.avatarProfile?.voiceName || "";
 
@@ -1135,7 +1138,7 @@ export function SessionPage({ slug }) {
         channels: 1,
       });
 
-      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&voice=${encodeURIComponent(selectedVoiceName)}`;
+      const socketUrl = `${getBackendWsUrl()}/api/live?agent=${encodeURIComponent(slug)}&voice=${encodeURIComponent(selectedVoiceName)}&token=${encodeURIComponent(tokenPayload.liveAdmissionToken)}`;
       const socket = new WebSocket(socketUrl);
       browserSocketRef.current = socket;
       attachSocketHandlers(socket);

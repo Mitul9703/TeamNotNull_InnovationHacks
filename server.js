@@ -27,13 +27,43 @@ const port = Number(process.env.PORT || 3000);
 
 const nextApp = next({ dev, hostname, port });
 const handle = nextApp.getRequestHandler();
-const upload = multer({ dest: "uploads/" });
 const DEMO_BROWSER_SESSION_LIMIT = 2;
 const DEMO_IP_SESSION_LIMIT = 4;
 const DEMO_SESSION_CAP_SECONDS = 120;
+const LIVE_ADMISSION_TTL_MS = 5 * 60 * 1000;
+const ROUTE_LIMITS = {
+  uploadDeck: { perAnon: 3, perIp: 8 },
+  externalResearch: { perAnon: 4, perIp: 10 },
+  evaluateSession: { perAnon: 6, perIp: 14 },
+  evaluateThread: { perAnon: 6, perIp: 14 },
+  compareSessions: { perAnon: 8, perIp: 16 },
+  sessionResources: { perAnon: 6, perIp: 14 },
+};
 
 const roundRobinState = new Map();
 const providerUsageState = new Map();
+const liveAdmissionState = new Map();
+
+const upload = multer({
+  dest: "uploads/",
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, callback) => {
+    const fileName = (file.originalname || "").toLowerCase();
+    const mimeType = (file.mimetype || "").toLowerCase();
+    const looksLikePdf =
+      mimeType === "application/pdf" || mimeType === "application/x-pdf" || fileName.endsWith(".pdf");
+
+    if (!looksLikePdf) {
+      callback(new Error("Only PDF uploads are allowed."));
+      return;
+    }
+
+    callback(null, true);
+  },
+});
 
 function parseCookies(cookieHeader = "") {
   return cookieHeader
@@ -52,6 +82,85 @@ function parseCookies(cookieHeader = "") {
     }, {});
 }
 
+function trimTrailingSlash(value = "") {
+  return value.replace(/\/+$/, "");
+}
+
+function extractOriginFromUrl(rawValue = "") {
+  if (!rawValue) return "";
+  try {
+    return trimTrailingSlash(new URL(rawValue).origin);
+  } catch (_error) {
+    return "";
+  }
+}
+
+function getRequestProtocol(req) {
+  const forwardedProto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0].trim();
+  return forwardedProto || (req.socket.encrypted ? "https" : "http");
+}
+
+function getRequestOrigin(req) {
+  const host = (req.headers.host || "").trim();
+  if (!host) return "";
+  return `${getRequestProtocol(req)}://${host}`;
+}
+
+function buildAllowedOrigins() {
+  const configured = [
+    process.env.APP_ORIGIN,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_BACKEND_HTTP_URL,
+    process.env.NEXT_PUBLIC_BACKEND_WS_URL,
+    process.env.RENDER_EXTERNAL_URL,
+  ]
+    .map((value) => extractOriginFromUrl(value || ""))
+    .filter(Boolean);
+
+  if (dev) {
+    configured.push("http://localhost:3000", "http://127.0.0.1:3000");
+  }
+
+  return new Set(configured);
+}
+
+const ALLOWED_ORIGINS = buildAllowedOrigins();
+
+function isTrustedOrigin(candidateOrigin, req) {
+  const normalized = trimTrailingSlash(candidateOrigin || "");
+  if (!normalized) {
+    return dev;
+  }
+
+  if (ALLOWED_ORIGINS.has(normalized)) {
+    return true;
+  }
+
+  const requestOrigin = getRequestOrigin(req);
+  return Boolean(requestOrigin) && normalized === requestOrigin;
+}
+
+function getOriginCandidate(req) {
+  return trimTrailingSlash(
+    (req.headers.origin || "").toString().trim() ||
+      extractOriginFromUrl((req.headers.referer || "").toString().trim()),
+  );
+}
+
+function requireTrustedOrigin(req, res, next) {
+  const candidateOrigin = getOriginCandidate(req);
+
+  if (isTrustedOrigin(candidateOrigin, req)) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    error: "Request origin not allowed.",
+    details: "This public demo only accepts requests from the official PitchMirror app origin.",
+  });
+}
+
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -66,6 +175,163 @@ function getOrCreateUsageCounter(scopeKey, periodKey) {
     providerUsageState.set(compositeKey, { counts: new Map() });
   }
   return providerUsageState.get(compositeKey);
+}
+
+function getUsageCount(scopeKey, subjectKey, periodKey) {
+  const counter = getOrCreateUsageCounter(scopeKey, periodKey);
+  return counter.counts.get(subjectKey) || 0;
+}
+
+function incrementUsageCount(scopeKey, subjectKey, periodKey, amount = 1) {
+  const counter = getOrCreateUsageCounter(scopeKey, periodKey);
+  const current = counter.counts.get(subjectKey) || 0;
+  counter.counts.set(subjectKey, current + amount);
+}
+
+function applyDailyRouteLimit(req, res, scopeKey, { perAnon, perIp, details }) {
+  const periodKey = getTodayKey();
+  const anonCount = getUsageCount(`${scopeKey}:anon`, req.pmAnonId, periodKey);
+  const ipCount = getUsageCount(`${scopeKey}:ip`, req.pmIpKey, periodKey);
+
+  if (anonCount >= perAnon) {
+    res.status(429).json({
+      error: "Daily demo limit reached.",
+      details,
+    });
+    return false;
+  }
+
+  if (ipCount >= perIp) {
+    res.status(429).json({
+      error: "Daily network limit reached.",
+      details,
+    });
+    return false;
+  }
+
+  incrementUsageCount(`${scopeKey}:anon`, req.pmAnonId, periodKey);
+  incrementUsageCount(`${scopeKey}:ip`, req.pmIpKey, periodKey);
+  return true;
+}
+
+function getSessionTokenSecret() {
+  return (
+    process.env.SESSION_TOKEN_SECRET ||
+    process.env.GEMINI_LIVE_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.ANAM_API_KEY ||
+    "pitchmirror-demo-secret"
+  );
+}
+
+function base64UrlEncode(value) {
+  return Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  return Buffer.from(`${normalized}${padding}`, "base64").toString("utf8");
+}
+
+function signLiveAdmissionToken(payload) {
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac("sha256", getSessionTokenSecret())
+    .update(encodedPayload)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifySignedToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) {
+    throw new Error("Missing or invalid token.");
+  }
+
+  const [encodedPayload, signature] = token.split(".");
+  const expectedSignature = crypto
+    .createHmac("sha256", getSessionTokenSecret())
+    .update(encodedPayload)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+  const provided = Buffer.from(signature);
+  const expected = Buffer.from(expectedSignature);
+
+  if (
+    provided.length !== expected.length ||
+    !crypto.timingSafeEqual(provided, expected)
+  ) {
+    throw new Error("Invalid token signature.");
+  }
+
+  const payload = JSON.parse(base64UrlDecode(encodedPayload));
+  if (!payload?.exp || payload.exp < Date.now()) {
+    throw new Error("Token has expired.");
+  }
+
+  return payload;
+}
+
+function cleanupExpiredLiveAdmissions(now = Date.now()) {
+  for (const [jti, record] of liveAdmissionState.entries()) {
+    if (!record || record.expiresAt <= now) {
+      liveAdmissionState.delete(jti);
+    }
+  }
+}
+
+function issueLiveAdmissionToken({ anonId, ipKey, agentSlug }) {
+  cleanupExpiredLiveAdmissions();
+  const jti = crypto.randomUUID();
+  const expiresAt = Date.now() + LIVE_ADMISSION_TTL_MS;
+  liveAdmissionState.set(jti, {
+    anonId,
+    ipKey,
+    agentSlug,
+    expiresAt,
+  });
+
+  return signLiveAdmissionToken({
+    jti,
+    anonId,
+    ipKey,
+    agentSlug,
+    exp: expiresAt,
+  });
+}
+
+function consumeLiveAdmissionToken(token, { anonId, ipKey, agentSlug }) {
+  const payload = verifySignedToken(token);
+  const record = liveAdmissionState.get(payload.jti);
+
+  if (!record) {
+    throw new Error("Live admission token is invalid or already used.");
+  }
+
+  if (
+    record.anonId !== anonId ||
+    record.ipKey !== ipKey ||
+    record.agentSlug !== agentSlug ||
+    payload.anonId !== anonId ||
+    payload.ipKey !== ipKey ||
+    payload.agentSlug !== agentSlug
+  ) {
+    throw new Error("Live admission token does not match this session.");
+  }
+
+  liveAdmissionState.delete(payload.jti);
+  return payload;
 }
 
 function pickKeyFromPool(scopeKey, keys, limit, periodKey) {
@@ -1579,6 +1845,42 @@ ${extraContext}
     const pathname = request.url || "";
 
     if (pathname.startsWith("/api/live")) {
+      const requestUrl = new URL(request.url || "/api/live", `http://${hostname}:${port}`);
+      const agentSlug = requestUrl.searchParams.get("agent") || "recruiter";
+      const liveAdmissionToken = (requestUrl.searchParams.get("token") || "").trim();
+      const requestOrigin = trimTrailingSlash((request.headers.origin || "").toString().trim());
+      const cookies = parseCookies((request.headers.cookie || "").toString());
+      const anonId = cookies.pm_anon_id;
+      const ipKey =
+        (request.headers["x-forwarded-for"] || "")
+          .toString()
+          .split(",")[0]
+          .trim() || request.socket.remoteAddress || "unknown";
+
+      if (!isTrustedOrigin(requestOrigin, { headers: request.headers, socket: request.socket })) {
+        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      if (!anonId || !liveAdmissionToken) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      try {
+        consumeLiveAdmissionToken(liveAdmissionToken, {
+          anonId,
+          ipKey,
+          agentSlug,
+        });
+      } catch (_error) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
       wss.handleUpgrade(request, socket, head, (clientSocket) => {
         wss.emit("connection", clientSocket, request);
       });
@@ -1591,8 +1893,22 @@ async function startServer() {
   const nextUpgradeHandler = nextApp.getUpgradeHandler();
 
   const app = express();
-  app.use(cors());
-  app.use(express.json());
+  app.disable("x-powered-by");
+  app.set("trust proxy", true);
+  app.use((req, res, next) => {
+    const origin = trimTrailingSlash((req.headers.origin || "").toString().trim());
+    if (origin && !isTrustedOrigin(origin, req)) {
+      next(new Error("Not allowed by CORS"));
+      return;
+    }
+
+    return cors({
+      origin: true,
+      credentials: true,
+      methods: ["GET", "POST", "OPTIONS"],
+    })(req, res, next);
+  });
+  app.use(express.json({ limit: "2mb" }));
   app.use((req, res, next) => {
     const cookies = parseCookies(req.headers.cookie || "");
     let anonId = cookies.pm_anon_id;
@@ -1601,7 +1917,7 @@ async function startServer() {
       anonId = crypto.randomUUID();
       res.setHeader(
         "Set-Cookie",
-        `pm_anon_id=${encodeURIComponent(anonId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+        `pm_anon_id=${encodeURIComponent(anonId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${dev ? "" : "; Secure"}`,
       );
     }
 
@@ -1618,7 +1934,7 @@ async function startServer() {
     res.json({ ok: true, hasDeck: false });
   });
 
-  app.post("/api/anam-session-token", async (req, res) => {
+  app.post("/api/anam-session-token", requireTrustedOrigin, async (req, res) => {
     try {
       const { agentSlug } = req.body || {};
       const agent = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
@@ -1673,6 +1989,11 @@ async function startServer() {
       return res.json({
         ok: true,
         sessionToken: payload.sessionToken,
+        liveAdmissionToken: issueLiveAdmissionToken({
+          anonId: req.pmAnonId,
+          ipKey: req.pmIpKey,
+          agentSlug: agentSlug || "recruiter",
+        }),
         sessionCapSeconds: DEMO_SESSION_CAP_SECONDS,
         avatarProfile: {
           name: avatarProfile.name,
@@ -1690,8 +2011,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/upload-deck", upload.single("deck"), async (req, res) => {
+  app.post("/api/upload-deck", requireTrustedOrigin, upload.single("deck"), async (req, res) => {
     try {
+      const allowed = applyDailyRouteLimit(req, res, "upload-deck", {
+        ...ROUTE_LIMITS.uploadDeck,
+        details: "This public demo allows only a few PDF upload preparations each day.",
+      });
+      if (!allowed) return;
+
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded." });
       }
@@ -1749,15 +2076,25 @@ ${rawText}`,
       });
     } catch (error) {
       console.error("Deck upload error:", error);
-      return res.status(500).json({
-        error: "Failed to upload and process PDF.",
+      const statusCode =
+        error instanceof multer.MulterError || error.message === "Only PDF uploads are allowed."
+          ? 400
+          : 500;
+      return res.status(statusCode).json({
+        error: statusCode === 400 ? error.message : "Failed to upload and process PDF.",
         details: error.message,
       });
     }
   });
 
-  app.post("/api/agent-external-context", async (req, res) => {
+  app.post("/api/agent-external-context", requireTrustedOrigin, async (req, res) => {
     try {
+      const allowed = applyDailyRouteLimit(req, res, "external-research", {
+        ...ROUTE_LIMITS.externalResearch,
+        details: "This public demo limits external context research runs each day.",
+      });
+      if (!allowed) return;
+
       const { agentSlug, companyUrl, customContext, upload } = req.body || {};
       const normalizedUrl = normalizeHttpUrl(companyUrl);
 
@@ -1792,8 +2129,14 @@ ${rawText}`,
     }
   });
 
-  app.post("/api/evaluate-session", async (req, res) => {
+  app.post("/api/evaluate-session", requireTrustedOrigin, async (req, res) => {
     try {
+      const allowed = applyDailyRouteLimit(req, res, "evaluate-session", {
+        ...ROUTE_LIMITS.evaluateSession,
+        details: "This public demo limits saved session evaluations each day.",
+      });
+      if (!allowed) return;
+
       const {
         agentSlug,
         transcript,
@@ -1892,8 +2235,14 @@ ${transcriptText}
     }
   });
 
-  app.post("/api/evaluate-thread", async (req, res) => {
+  app.post("/api/evaluate-thread", requireTrustedOrigin, async (req, res) => {
     try {
+      const allowed = applyDailyRouteLimit(req, res, "evaluate-thread", {
+        ...ROUTE_LIMITS.evaluateThread,
+        details: "This public demo limits thread-level evaluations each day.",
+      });
+      if (!allowed) return;
+
       const { agentSlug, thread, sessions } = req.body || {};
       const agent = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
       const orderedSessions = Array.isArray(sessions) ? [...sessions] : [];
@@ -1996,8 +2345,14 @@ ${sessionDigest}
     }
   });
 
-  app.post("/api/compare-sessions", async (req, res) => {
+  app.post("/api/compare-sessions", requireTrustedOrigin, async (req, res) => {
     try {
+      const allowed = applyDailyRouteLimit(req, res, "compare-sessions", {
+        ...ROUTE_LIMITS.compareSessions,
+        details: "This public demo limits session comparisons each day.",
+      });
+      if (!allowed) return;
+
       const { agentSlug, currentSession, baselineSession } = req.body || {};
       const agent = AGENT_LOOKUP[agentSlug] || AGENT_LOOKUP.recruiter;
       const currentEvaluation = currentSession?.evaluation;
@@ -2096,8 +2451,14 @@ Instructions:
     }
   });
 
-  app.post("/api/session-resources", async (req, res) => {
+  app.post("/api/session-resources", requireTrustedOrigin, async (req, res) => {
     try {
+      const allowed = applyDailyRouteLimit(req, res, "session-resources", {
+        ...ROUTE_LIMITS.sessionResources,
+        details: "This public demo limits resource-generation runs each day.",
+      });
+      if (!allowed) return;
+
       if (!process.env.FIRECRAWL_API_KEY) {
         return res.status(400).json({
           error: "Firecrawl API key must be configured.",
@@ -2141,6 +2502,43 @@ Instructions:
         details: error.message,
       });
     }
+  });
+
+  app.use((error, _req, res, next) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      const message =
+        error.code === "LIMIT_FILE_SIZE"
+          ? "PDF uploads must be 5 MB or smaller."
+          : "Failed to process uploaded PDF.";
+      res.status(400).json({
+        error: message,
+        details: error.message,
+      });
+      return;
+    }
+
+    if (error.message === "Only PDF uploads are allowed.") {
+      res.status(400).json({
+        error: error.message,
+        details: error.message,
+      });
+      return;
+    }
+
+    if (error.message === "Not allowed by CORS") {
+      res.status(403).json({
+        error: "Request origin not allowed.",
+        details: "This public demo only accepts requests from the official PitchMirror app origin.",
+      });
+      return;
+    }
+
+    next(error);
   });
 
   app.all(/.*/, (req, res) => handle(req, res));
