@@ -111,6 +111,12 @@ button {
   margin-bottom: 28px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -153,6 +159,39 @@ button {
   padding: 10px 14px;
   cursor: pointer;
   box-shadow: var(--shadow);
+}
+
+.session-limit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--soft-pill);
+  color: var(--text);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.session-limit-pill-exhausted {
+  border-color: rgba(214, 164, 92, 0.34);
+  background: linear-gradient(135deg, rgba(214, 164, 92, 0.16), rgba(168, 125, 62, 0.12));
+}
+
+.session-limit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgba(49, 179, 164, 0.12);
+  flex-shrink: 0;
+}
+
+.session-limit-pill-exhausted .session-limit-dot {
+  background: #d6a45c;
+  box-shadow: 0 0 0 6px rgba(214, 164, 92, 0.14);
 }
 
 .hero {

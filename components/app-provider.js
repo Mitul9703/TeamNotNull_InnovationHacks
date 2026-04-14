@@ -24,6 +24,19 @@ function buildDefaultComparison() {
   };
 }
 
+function buildDefaultDemoQuota() {
+  return {
+    status: "idle",
+    browserRemaining: 2,
+    ipRemaining: 4,
+    remainingSessions: 2,
+    canStartLiveSession: true,
+    sessionCapSeconds: 120,
+    resetAt: "",
+    error: "",
+  };
+}
+
 function buildDefaultThreadEvaluation() {
   return {
     status: "idle",
@@ -282,6 +295,7 @@ export function AppProvider({ children }) {
   );
   const [mounted, setMounted] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [demoQuota, setDemoQuota] = useState(buildDefaultDemoQuota());
   const evaluationJobsRef = useRef(new Map());
   const resourceJobsRef = useRef(new Map());
   const comparisonJobsRef = useRef(new Map());
@@ -307,6 +321,36 @@ export function AppProvider({ children }) {
       }
     } catch (_error) {}
     setMounted(true);
+  }, []);
+
+  const refreshDemoQuota = useCallback(async () => {
+    try {
+      const response = await fetch(getApiUrl("/api/demo-session-status"), {
+        credentials: "same-origin",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load demo session limits.");
+      }
+
+      setDemoQuota({
+        status: "ready",
+        browserRemaining: Number(payload.browserRemaining ?? 0),
+        ipRemaining: Number(payload.ipRemaining ?? 0),
+        remainingSessions: Number(payload.remainingSessions ?? 0),
+        canStartLiveSession: Boolean(payload.canStartLiveSession),
+        sessionCapSeconds: Number(payload.sessionCapSeconds ?? 120),
+        resetAt: payload.resetAt || "",
+        error: "",
+      });
+    } catch (error) {
+      setDemoQuota((current) => ({
+        ...current,
+        status: "error",
+        error: error.message || "Could not load demo session limits.",
+      }));
+    }
   }, []);
 
   const setTheme = useCallback((theme) => {
@@ -1014,6 +1058,21 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!mounted) return;
 
+    void refreshDemoQuota();
+
+    const handleFocus = () => {
+      void refreshDemoQuota();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [mounted, refreshDemoQuota]);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     AGENTS.forEach((agent) => {
       (state.threads[agent.slug] || []).forEach((thread) => {
         if (thread.evaluation?.status === "processing") {
@@ -1128,6 +1187,8 @@ export function AppProvider({ children }) {
       runThreadEvaluationJob,
       dismissToast,
       toasts,
+      demoQuota,
+      refreshDemoQuota,
     }),
     [
       createSessionRecord,
@@ -1147,6 +1208,8 @@ export function AppProvider({ children }) {
       deleteSession,
       runThreadEvaluationJob,
       toasts,
+      demoQuota,
+      refreshDemoQuota,
     ],
   );
 

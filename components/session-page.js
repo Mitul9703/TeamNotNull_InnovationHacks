@@ -145,7 +145,7 @@ function getCodingLanguageExtensions(language) {
 export function SessionPage({ slug }) {
   const DEMO_SESSION_CAP_SECONDS = 120;
   const router = useRouter();
-  const { state, patchAgent, createSessionRecord } = useAppState();
+  const { state, patchAgent, createSessionRecord, refreshDemoQuota } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const agentState = state.agents[slug];
   const upload = agentState?.upload;
@@ -1077,11 +1077,13 @@ export function SessionPage({ slug }) {
       });
       const tokenPayload = await tokenResponse.json();
       if (!tokenResponse.ok || !tokenPayload?.sessionToken) {
+        void refreshDemoQuota();
         throw new Error(tokenPayload?.details || tokenPayload?.error || "Failed to create Anam session.");
       }
       if (!tokenPayload?.liveAdmissionToken) {
         throw new Error("Failed to authorize the live demo session.");
       }
+      void refreshDemoQuota();
       setSessionCapSeconds(tokenPayload?.sessionCapSeconds || DEMO_SESSION_CAP_SECONDS);
       const selectedVoiceName = tokenPayload?.avatarProfile?.voiceName || "";
 

@@ -31,6 +31,7 @@ export function ThreadDetailPage({ slug, threadId }) {
     selectThread,
     deleteThread,
     deleteSession,
+    demoQuota,
   } = useAppState();
   const agent = AGENT_LOOKUP[slug];
   const agentState = state.agents?.[slug];
@@ -44,13 +45,26 @@ export function ThreadDetailPage({ slug, threadId }) {
   const [localError, setLocalError] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
 
+  const resetTimeLabel = useMemo(() => {
+    if (!demoQuota?.resetAt) return "";
+    try {
+      return new Date(demoQuota.resetAt).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch (_error) {
+      return "";
+    }
+  }, [demoQuota?.resetAt]);
+
   const canStart = useMemo(() => {
     return (
       upload?.status !== "uploading" &&
       agentState?.session?.status !== "starting" &&
+      demoQuota?.canStartLiveSession !== false &&
       Boolean(agentState?.sessionName?.trim())
     );
-  }, [agentState?.session?.status, agentState?.sessionName, upload?.status]);
+  }, [agentState?.session?.status, agentState?.sessionName, demoQuota?.canStartLiveSession, upload?.status]);
 
   if (!agent || !thread || !agentState) {
     return (
@@ -98,6 +112,12 @@ export function ThreadDetailPage({ slug, threadId }) {
   async function startSession() {
     if (!agentState.sessionName?.trim()) {
       setLocalError("Session name is required.");
+      return;
+    }
+    if (demoQuota?.canStartLiveSession === false) {
+      setLocalError(
+        `You’ve used both public demo sessions for today. Come back after ${resetTimeLabel || "the daily reset"}.`,
+      );
       return;
     }
     if (!canStart) return;
@@ -356,6 +376,12 @@ export function ThreadDetailPage({ slug, threadId }) {
           {localError ? (
             <p className="muted-copy" style={{ color: "var(--danger)", marginTop: 12, marginBottom: 0 }}>
               {localError}
+            </p>
+          ) : null}
+
+          {demoQuota?.status === "ready" && !demoQuota.canStartLiveSession ? (
+            <p className="muted-copy" style={{ color: "var(--warning)", marginTop: 12, marginBottom: 0 }}>
+              You’ve used both public demo sessions for today. Come back after {resetTimeLabel || "the daily reset"}.
             </p>
           ) : null}
 

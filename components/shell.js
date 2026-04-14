@@ -28,8 +28,12 @@ function MoonIcon() {
 }
 
 export function AppShell({ children, compact = false }) {
-  const { state, setTheme, toasts, dismissToast } = useAppState();
+  const { state, setTheme, toasts, dismissToast, demoQuota } = useAppState();
   const isLight = state.theme === "light";
+  const quotaLabel =
+    demoQuota.status === "ready"
+      ? `${demoQuota.remainingSessions} session${demoQuota.remainingSessions === 1 ? "" : "s"} left today`
+      : "Checking demo limit…";
 
   return (
     <div className="app-shell">
@@ -45,17 +49,23 @@ export function AppShell({ children, compact = false }) {
               </div>
             </div>
           </Link>
-          <button
-            type="button"
-            className={`theme-toggle-icon ${isLight ? "theme-is-light" : "theme-is-dark"}`}
-            onClick={() => setTheme(isLight ? "dark" : "light")}
-            aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
-            title={isLight ? "Switch to dark mode" : "Switch to light mode"}
-          >
-            <span className="theme-icon-inner">
-              {isLight ? <MoonIcon /> : <SunIcon />}
-            </span>
-          </button>
+          <div className="topbar-actions">
+            <div className={`session-limit-pill ${demoQuota.canStartLiveSession ? "" : "session-limit-pill-exhausted"}`}>
+              <span className="session-limit-dot" aria-hidden="true" />
+              <span>{quotaLabel}</span>
+            </div>
+            <button
+              type="button"
+              className={`theme-toggle-icon ${isLight ? "theme-is-light" : "theme-is-dark"}`}
+              onClick={() => setTheme(isLight ? "dark" : "light")}
+              aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
+              title={isLight ? "Switch to dark mode" : "Switch to light mode"}
+            >
+              <span className="theme-icon-inner">
+                {isLight ? <MoonIcon /> : <SunIcon />}
+              </span>
+            </button>
+          </div>
         </header>
         {children}
         {toasts.length ? (

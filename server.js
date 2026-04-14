@@ -169,6 +169,14 @@ function getMonthKey() {
   return new Date().toISOString().slice(0, 7);
 }
 
+function getNextDailyResetIso() {
+  const now = new Date();
+  const nextUtcMidnight = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0),
+  );
+  return nextUtcMidnight.toISOString();
+}
+
 function getOrCreateUsageCounter(scopeKey, periodKey) {
   const compositeKey = `${scopeKey}:${periodKey}`;
   if (!providerUsageState.has(compositeKey)) {
@@ -1934,6 +1942,27 @@ async function startServer() {
     res.json({ ok: true, hasDeck: false });
   });
 
+  app.get("/api/demo-session-status", (req, res) => {
+    const periodKey = getTodayKey();
+    const browserCount = getUsageCount("browser-live-starts", req.pmAnonId, periodKey);
+    const ipCount = getUsageCount("ip-live-starts", req.pmIpKey, periodKey);
+    const browserRemaining = Math.max(0, DEMO_BROWSER_SESSION_LIMIT - browserCount);
+    const ipRemaining = Math.max(0, DEMO_IP_SESSION_LIMIT - ipCount);
+    const remainingSessions = Math.max(0, Math.min(browserRemaining, ipRemaining));
+
+    res.json({
+      ok: true,
+      browserCount,
+      ipCount,
+      browserRemaining,
+      ipRemaining,
+      remainingSessions,
+      canStartLiveSession: remainingSessions > 0,
+      sessionCapSeconds: DEMO_SESSION_CAP_SECONDS,
+      resetAt: getNextDailyResetIso(),
+    });
+  });
+
   app.post("/api/anam-session-token", requireTrustedOrigin, async (req, res) => {
     try {
       const { agentSlug } = req.body || {};
@@ -1995,6 +2024,14 @@ async function startServer() {
           agentSlug: agentSlug || "recruiter",
         }),
         sessionCapSeconds: DEMO_SESSION_CAP_SECONDS,
+        remainingSessions: Math.max(
+          0,
+          Math.min(
+            DEMO_BROWSER_SESSION_LIMIT - (browserCount + 1),
+            DEMO_IP_SESSION_LIMIT - (ipCount + 1),
+          ),
+        ),
+        resetAt: getNextDailyResetIso(),
         avatarProfile: {
           name: avatarProfile.name,
           avatarId: avatarProfile.avatarId,
