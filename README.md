@@ -295,7 +295,7 @@ The ReAct agent does not just call a single search endpoint. It follows a tool-u
 3. scrape the strongest matches
 4. synthesize one grounded result for the live session or report
 
-That makes the context generation more explainable and more controllable than a one-shot prompt.
+That makes the context generation more explainable, more accurate and more controllable than a one-shot prompt.
 
 
 ## Environment example
